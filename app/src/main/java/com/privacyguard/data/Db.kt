@@ -122,6 +122,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
     }
 
     /** Fshi te dhenat me te vjetra se N dite (qe baza te mos rritet pa fund). */
+    fun clearAll() = writableDatabase.transaction {
+        for (t in listOf("access", "net", "screen", "conn")) delete(t, null, null)
+    }
+
     fun prune(days: Int = 60) {
         val cut = System.currentTimeMillis() - days * 86_400_000L
         writableDatabase.transaction {

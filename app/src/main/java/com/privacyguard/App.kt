@@ -42,6 +42,18 @@ object Prefs {
     fun setMonitor(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("monitor", v).apply()
     fun vpn(ctx: Context) = p(ctx).getBoolean("vpn", false)
     fun setVpn(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("vpn", v).apply()
+    /** "Clear history": asgje para ketij momenti nuk mblidhet me (Android-i vete mban 7 dite). */
+    fun since(ctx: Context) = p(ctx).getLong("since", 0L)
+    fun setSince(ctx: Context, v: Long) = p(ctx).edit().putLong("since", v).apply()
+}
+
+object History {
+    /** Fshin gjithe historikun e mbledhur; lejet, lidhja ADB dhe bllokimet mbeten. */
+    fun clear(ctx: Context) {
+        Prefs.setSince(ctx, System.currentTimeMillis())
+        com.privacyguard.data.Db.get(ctx).clearAll()
+        ctx.filesDir.listFiles { f -> f.name.startsWith("raw_") }?.forEach { it.delete() }
+    }
 }
 
 /** Pas restartimit: monitorimi rinis vete (App.onCreate). VPN-ja rinis nese ishte ndezur. */

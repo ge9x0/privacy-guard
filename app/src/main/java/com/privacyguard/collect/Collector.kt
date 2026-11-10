@@ -44,7 +44,7 @@ object Collector {
             lap("parse")
             read = evs.size
             // prune() i fshin sidoqofte ato me te vjetra se 60 dite; mos i shkruaj fare
-            val cut = System.currentTimeMillis() - 60 * 86_400_000L
+            val cut = maxOf(System.currentTimeMillis() - 60 * 86_400_000L, com.privacyguard.Prefs.since(ctx))
             new = db.addAccess(evs.filter { it.ts >= cut })
             lap("db access")
             if (!txt.contains("iscrete")) note = "This Android version gave no detailed history; only the last access per app was saved."
@@ -66,10 +66,13 @@ object Collector {
         val z = ZoneId.systemDefault()
         val out = ArrayList<NetRow>()
         val today = LocalDate.now()
+        val since = com.privacyguard.Prefs.since(ctx)
         for (i in 0 until days) {
             val d = today.minusDays(i.toLong())
-            val from = d.atStartOfDay(z).toInstant().toEpochMilli()
+            val dayStart = d.atStartOfDay(z).toInstant().toEpochMilli()
             val to = d.plusDays(1).atStartOfDay(z).toInstant().toEpochMilli()
+            if (to <= since) continue
+            val from = maxOf(dayStart, since)
             for ((type, name) in listOf(ConnectivityManager.TYPE_WIFI to "WIFI", ConnectivityManager.TYPE_MOBILE to "MOBILE")) {
                 val agg = HashMap<Pair<Int, String>, LongArray>()
                 runCatching {
@@ -83,7 +86,7 @@ object Collector {
                         }
                     }
                 }.onFailure { Log.w(TAG, "netstats $name", it) }
-                for ((k, v) in agg) out += NetRow(k.first, name, k.second, from, v[0], v[1])
+                for ((k, v) in agg) out += NetRow(k.first, name, k.second, dayStart, v[0], v[1])
             }
         }
         return out

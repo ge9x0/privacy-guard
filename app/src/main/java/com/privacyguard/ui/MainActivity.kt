@@ -286,9 +286,34 @@ private fun Home() {
                 }
             }
         }
+        HistoryCard(busy == null) {
+            work("Clearing history") { com.privacyguard.History.clear(ctx); "History cleared. Only what happens from now on is recorded." }
+        }
         Text("A report is created automatically every night at 23:50 and saved to Download/PrivacyGuard.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun HistoryCard(enabled: Boolean, onClear: () -> Unit) {
+    val ctx = LocalContext.current
+    var ask by remember { mutableStateOf(false) }
+    val since = Prefs.since(ctx)
+    SectionCard {
+        Title("History")
+        Hint(if (since > 0) "Recording since " + java.time.Instant.ofEpochMilli(since).atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")) + "."
+            else "Includes the last 7 days that Android keeps itself.")
+        if (!ask) OutlinedButton(onClick = { ask = true }, enabled = enabled) { Text("Clear history") }
+        else {
+            Text("Delete everything collected so far and start from zero? Earlier activity will not be read again. " +
+                "Permissions, pairing and blocking stay. Saved PDFs are not deleted.", fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { ask = false; onClear() }, colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = RED)) { Text("Delete") }
+                TextButton(onClick = { ask = false }) { Text("Cancel") }
+            }
+        }
     }
 }
 
