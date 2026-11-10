@@ -11,43 +11,43 @@ import java.time.ZoneId
 import kotlin.math.abs
 
 enum class Sev(val label: String, val color: Int, val order: Int) {
-    CRIT("KRITIKE", 0xFFC62828.toInt(), 0),
-    HIGH("E LARTË", 0xFFE65100.toInt(), 1),
-    MED("MESATARE", 0xFFB7791F.toInt(), 2),
+    CRIT("CRITICAL", 0xFFC62828.toInt(), 0),
+    HIGH("HIGH", 0xFFE65100.toInt(), 1),
+    MED("MEDIUM", 0xFFB7791F.toInt(), 2),
     INFO("INFO", 0xFF5B6475.toInt(), 3),
 }
 
 object Ops {
     /** op -> (emri, grupi) */
     val map = mapOf(
-        "RECORD_AUDIO" to ("Mikrofon" to "mic"),
-        "CAMERA" to ("Kamera" to "cam"),
-        "PHONE_CALL_MICROPHONE" to ("Mikrofon (thirrje)" to "call"),
-        "PHONE_CALL_CAMERA" to ("Kamera (thirrje)" to "call"),
-        "RECEIVE_AMBIENT_TRIGGER_AUDIO" to ("Mikrofon (hotword)" to "mic"),
-        "FINE_LOCATION" to ("Vendndodhje e saktë" to "loc"),
-        "COARSE_LOCATION" to ("Vendndodhje e përafërt" to "loc"),
-        "MONITOR_LOCATION" to ("Ndjekje vendndodhjeje" to "loc"),
-        "MONITOR_HIGH_POWER_LOCATION" to ("Ndjekje GPS" to "loc"),
-        "READ_CONTACTS" to ("Kontaktet" to "personal"),
-        "READ_CALL_LOG" to ("Historiku i thirrjeve" to "personal"),
-        "READ_SMS" to ("Mesazhet SMS" to "personal"),
-        "READ_CALENDAR" to ("Kalendari" to "personal"),
-        "GET_ACCOUNTS" to ("Llogaritë" to "personal"),
-        "READ_CLIPBOARD" to ("Clipboard (tekst i kopjuar)" to "clip"),
-        "READ_MEDIA_IMAGES" to ("Fotot" to "media"),
-        "READ_MEDIA_VIDEO" to ("Videot" to "media"),
+        "RECORD_AUDIO" to ("Microphone" to "mic"),
+        "CAMERA" to ("Camera" to "cam"),
+        "PHONE_CALL_MICROPHONE" to ("Microphone (call)" to "call"),
+        "PHONE_CALL_CAMERA" to ("Camera (call)" to "call"),
+        "RECEIVE_AMBIENT_TRIGGER_AUDIO" to ("Microphone (hotword)" to "mic"),
+        "FINE_LOCATION" to ("Precise location" to "loc"),
+        "COARSE_LOCATION" to ("Approximate location" to "loc"),
+        "MONITOR_LOCATION" to ("Location tracking" to "loc"),
+        "MONITOR_HIGH_POWER_LOCATION" to ("GPS tracking" to "loc"),
+        "READ_CONTACTS" to ("Contacts" to "personal"),
+        "READ_CALL_LOG" to ("Call log" to "personal"),
+        "READ_SMS" to ("SMS messages" to "personal"),
+        "READ_CALENDAR" to ("Calendar" to "personal"),
+        "GET_ACCOUNTS" to ("Accounts" to "personal"),
+        "READ_CLIPBOARD" to ("Clipboard (copied text)" to "clip"),
+        "READ_MEDIA_IMAGES" to ("Photos" to "media"),
+        "READ_MEDIA_VIDEO" to ("Videos" to "media"),
         "READ_MEDIA_AUDIO" to ("Audio" to "media"),
-        "READ_EXTERNAL_STORAGE" to ("Skedarët" to "media"),
-        "ACCESS_MEDIA_LOCATION" to ("Vendndodhja në foto" to "media"),
-        "BODY_SENSORS" to ("Sensorët e trupit" to "personal"),
-        "ACTIVITY_RECOGNITION" to ("Aktiviteti fizik" to "personal"),
-        "READ_PHONE_NUMBERS" to ("Numri i telefonit" to "personal"),
+        "READ_EXTERNAL_STORAGE" to ("Files" to "media"),
+        "ACCESS_MEDIA_LOCATION" to ("Location in photos" to "media"),
+        "BODY_SENSORS" to ("Body sensors" to "personal"),
+        "ACTIVITY_RECOGNITION" to ("Physical activity" to "personal"),
+        "READ_PHONE_NUMBERS" to ("Phone number" to "personal"),
     )
 
     val stateLabel = mapOf(
-        "top" to "Në ekran", "fgsvc" to "Shërbim (me njoftim)", "fg" to "Shërbim (me njoftim)",
-        "bg" to "Background", "cch" to "Background (fjetur)", "pers" to "Sistem", "unknown" to "E panjohur",
+        "top" to "On screen", "fgsvc" to "Service (with notification)", "fg" to "Service (with notification)",
+        "bg" to "Background", "cch" to "Background (sleeping)", "pers" to "System", "unknown" to "Unknown",
     )
     val background = setOf("bg", "cch", "cached")
     val sensitive = setOf("personal", "loc", "mic", "cam", "clip", "media")
@@ -58,18 +58,22 @@ object Ops {
         "com.google.android.googlequicksearchbox" to "Google Assistant ('Hey Google')",
         "com.google.android.as" to "Android System Intelligence",
         "com.samsung.android.bixby.agent" to "Bixby",
-        "com.samsung.android.bixby.wakeup" to "Bixby (fjala zgjuese)",
-        "com.samsung.android.incallui" to "Thirrjet Samsung",
-        "com.android.phone" to "Thirrjet",
-        "com.samsung.android.dialer" to "Thirrjet Samsung",
-        "com.sec.android.app.camera" to "Kamera e Samsung",
-        "com.android.systemui" to "Sistemi",
-        "android" to "Sistemi Android",
+        "com.samsung.android.bixby.wakeup" to "Bixby (wake word)",
+        "com.samsung.android.incallui" to "Samsung Phone",
+        "com.android.phone" to "Phone calls",
+        "com.samsung.android.dialer" to "Samsung Phone",
+        "com.sec.android.app.camera" to "Samsung Camera",
+        "com.android.systemui" to "System UI",
+        "android" to "Android system",
         "com.google.android.gms" to "Google Play Services",
-        "com.samsung.android.location" to "Vendndodhja Samsung",
-        "com.sec.android.app.voicenote" to "Diktafoni Samsung",
+        "com.samsung.android.location" to "Samsung Location",
+        "com.sec.android.app.voicenote" to "Samsung Voice Recorder",
         "com.privacyguard" to "Privacy Guard",
-    )
+    ).let { m ->
+        // ne debug, prova e mikrofonit (TestMicReceiver) duhet te sillet si nje app i vertete;
+        // ne release Privacy Guard s'ka fare leje mikrofoni
+        if (com.privacyguard.BuildConfig.DEBUG) m - "com.privacyguard" else m
+    }
 }
 
 /** Emrat e app-eve nga vete telefoni. */
@@ -78,7 +82,7 @@ class AppNames(private val ctx: Context) {
     private val uidCache = HashMap<Int, String>()
 
     fun name(pkg: String): String = cache.getOrPut(pkg) {
-        if (pkg == UNKNOWN) return@getOrPut "E panjohur"
+        if (pkg == UNKNOWN) return@getOrPut "Unknown app"
         runCatching {
             val pm = ctx.packageManager
             pm.getApplicationLabel(pm.getApplicationInfo(pkg, PackageManager.GET_META_DATA)).toString()
@@ -179,28 +183,28 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
         val fgs = e.state in Ops.fgService
         val off = screenOn == false
         var sev = Sev.INFO
-        var why = "Përdorim i dukshëm (app-i ishte në ekran)."
+        var why = "Visible use (the app was on screen)."
         if (e.kind == "reject") {
             return if (group == "mic" || group == "cam")
-                Sev.MED to "Tentoi ta përdorë, por leja ishte e bllokuar. Pse e kërkoi në atë moment?"
-            else Sev.INFO to "Tentoi, por u bllokua."
+                Sev.MED to "Tried to use it, but access was blocked. Why did it ask at that moment?"
+            else Sev.INFO to "Tried, but was blocked."
         }
         when (group) {
             "mic", "cam" -> when {
-                e.pkg == AppNames.UNKNOWN && off -> { sev = Sev.CRIT; why = "U aktivizua me ekran të FIKUR (app-i nuk dihet në këtë mënyrë)." }
-                off -> { sev = Sev.CRIT; why = "Ekrani ishte i FIKUR kur u përdor." }
-                bg -> { sev = Sev.CRIT; why = "App-i NUK ishte në ekran (background)." }
-                fgs -> { sev = Sev.MED; why = "App-i ishte jashtë ekranit si shërbim. Normale për thirrje ose regjistrim me njoftim." }
+                e.pkg == AppNames.UNKNOWN && off -> { sev = Sev.CRIT; why = "Turned on while the screen was OFF (app unknown in this mode)." }
+                off -> { sev = Sev.CRIT; why = "The screen was OFF when it was used." }
+                bg -> { sev = Sev.CRIT; why = "The app was NOT on screen (background)." }
+                fgs -> { sev = Sev.MED; why = "The app was off screen as a service. Normal for calls or recording with a notification." }
             }
-            "loc" -> if (bg || fgs || off) { sev = Sev.MED; why = "Vendndodhja u lexua kur app-i s'ishte në ekran." }
-            "personal", "clip" -> if (bg || off) { sev = Sev.HIGH; why = "Të dhëna personale u lexuan në background." }
-            "media" -> if (bg || off) { sev = Sev.MED; why = "Fotot/skedarët u lexuan në background." }
-            "call" -> { sev = Sev.INFO; why = "Pjesë e një thirrjeje." }
+            "loc" -> if (bg || fgs || off) { sev = Sev.MED; why = "Location was read while the app was not on screen." }
+            "personal", "clip" -> if (bg || off) { sev = Sev.HIGH; why = "Personal data was read in the background." }
+            "media" -> if (bg || off) { sev = Sev.MED; why = "Photos/files were read in the background." }
+            "call" -> { sev = Sev.INFO; why = "Part of a phone call." }
         }
         val known = Ops.knownSystem[e.pkg]
         if (known != null && sev != Sev.INFO) {
             sev = if (sev == Sev.MED) Sev.INFO else Sev.MED
-            why += " ($known - zakonisht normale.)"
+            why += " ($known - usually normal.)"
         }
         return sev to why
     }

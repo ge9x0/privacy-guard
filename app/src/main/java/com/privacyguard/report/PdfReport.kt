@@ -55,8 +55,8 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
         val p = doc.startPage(PdfDocument.PageInfo.Builder(W.toInt(), H.toInt(), pageNo).create())
         page = p; c = p.canvas; y = M
         val f = tp(7f, MUTED)
-        c.drawText("Privacy Guard · raport privatësie", M, H - 22f, f)
-        val s = "Faqja $pageNo"
+        c.drawText("Privacy Guard · privacy report", M, H - 22f, f)
+        val s = "Page $pageNo"
         c.drawText(s, W - M - f.measureText(s), H - 22f, f)
     }
 
@@ -162,7 +162,7 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
         val labelW = 150f
         val chartW = CW - labelW
         val h = rows.size * rowH + 34
-        h2("Kush përdori çfarë, gjatë ditës")
+        h2("Who used what, during the day")
         need(h)
         val top = y
         val x0 = M + labelW
@@ -216,8 +216,8 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
         // legjenda
         var lx = x0
         val ly = top + rows.size * rowH + 18
-        val leg = mutableListOf(C_TOP to "Në ekran", C_FGS to "Shërbim me njoftim", C_BG to "Background / ekran i fikur")
-        if (d.screen.isNotEmpty()) leg += C_OFF to "Ekrani i fikur"
+        val leg = mutableListOf(C_TOP to "On screen", C_FGS to "Service with notification", C_BG to "Background / screen off")
+        if (d.screen.isNotEmpty()) leg += C_OFF to "Screen off"
         for ((col, t) in leg) {
             c.drawRect(lx, ly, lx + 8, ly + 6, Paint().apply { color = col })
             c.drawText(t, lx + 11, ly + 5.5f, axis)
@@ -227,32 +227,32 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
     }
 
     // ------------------------------------------------------------- permbajtja
-    private val dayNames = listOf("E hënë", "E martë", "E mërkurë", "E enjte", "E premte", "E shtunë", "E diel")
-    private val months = listOf("Janar", "Shkurt", "Mars", "Prill", "Maj", "Qershor", "Korrik", "Gusht", "Shtator", "Tetor", "Nëntor", "Dhjetor")
-    private fun dayTitle(d: LocalDate) = "${dayNames[d.dayOfWeek.value - 1]}, ${d.dayOfMonth} ${months[d.monthValue - 1]} ${d.year}"
+    private val dayNames = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    private val months = listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
+    private fun dayTitle(d: LocalDate) = "${dayNames[d.dayOfWeek.value - 1]}, ${months[d.monthValue - 1]} ${d.dayOfMonth}, ${d.year}"
     private val hmFmt = DateTimeFormatter.ofPattern("HH:mm")
     private fun hm(ts: Long) = LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()).format(hmFmt)
     private fun red(n: Int) = if (n > 0) Sev.CRIT.color else null
 
     private fun summary(days: List<DayReport>) {
         newPage()
-        h1("Raporti i privatësisë së telefonit")
+        h1("Phone privacy report")
         val model = "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}"
         sub("$model · ${dayTitle(days.first().day)}${if (days.size > 1) " – " + dayTitle(days.last().day) else ""}")
-        sub("Krijuar më ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm"))} · Mënyra: $modeLabel")
+        sub("Created ${LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm"))} · Mode: $modeLabel")
         y += 6
         val crit = days.sumOf { it.crit }; val high = days.sumOf { it.high }; val trk = days.sumOf { it.trk }
         kpis(listOf(
-            Triple("$crit", "Sinjalizime kritike", red(crit)),
-            Triple("$high", "Të dhëna personale në background", if (high > 0) Sev.HIGH.color else null),
-            Triple(fmtDur(days.sumOf { it.micMs }), "Mikrofon (${days.sumOf { it.micN }} herë)", null),
-            Triple(fmtDur(days.sumOf { it.camMs }), "Kamera (${days.sumOf { it.camN }} herë)", null),
-            Triple(fmtBytes(days.sumOf { it.txBg }), "Dërguar në background", null),
-            Triple("$trk", "Kërkesa te trackera", if (trk > 0) Sev.HIGH.color else null),
+            Triple("$crit", "Critical alerts", red(crit)),
+            Triple("$high", "Personal data in background", if (high > 0) Sev.HIGH.color else null),
+            Triple(fmtDur(days.sumOf { it.micMs }), "Microphone (${days.sumOf { it.micN }}×)", null),
+            Triple(fmtDur(days.sumOf { it.camMs }), "Camera (${days.sumOf { it.camN }}×)", null),
+            Triple(fmtBytes(days.sumOf { it.txBg }), "Sent in background", null),
+            Triple("$trk", "Tracker requests", if (trk > 0) Sev.HIGH.color else null),
         ))
         if (days.size > 1) {
-            h2("Dita pas dite")
-            table(listOf("Dita", "Mikrofon", "Kamera", "Kritike", "Të larta", "Dërguar (bg)", "Gjithsej", "Trackera"),
+            h2("Day by day")
+            table(listOf("Day", "Microphone", "Camera", "Critical", "High", "Sent (bg)", "Total", "Trackers"),
                 days.map { d ->
                     listOf(Cell(dayTitle(d.day)), Cell("${d.micN}× · ${fmtDur(d.micMs)}"), Cell("${d.camN}× · ${fmtDur(d.camMs)}"),
                         Cell("${d.crit}", red(d.crit), d.crit > 0), Cell("${d.high}", red(d.high), d.high > 0),
@@ -266,19 +266,19 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
             what.getOrPut(it.e.pkg) { sortedSetOf() } += it.label
         }
         if (agg.isNotEmpty()) {
-            h2("App-et që duhen parë")
-            table(listOf("App", "Paketa", "Kritike", "Të larta", "Mesatare", "Çfarë"),
+            h2("Apps to look at")
+            table(listOf("App", "Package", "Critical", "High", "Medium", "What"),
                 agg.entries.sortedWith(compareBy({ -it.value[0] }, { -it.value[1] }, { -it.value[2] })).take(10).map { (pkg, a) ->
                     listOf(Cell(names.name(pkg), bold = true), Cell(pkg, small = true), Cell("${a[0]}", red(a[0])),
                         Cell("${a[1]}"), Cell("${a[2]}"), Cell(what[pkg].orEmpty().joinToString(", ")))
                 }, listOf(.16f, .30f, .09f, .09f, .10f, .26f))
         }
-        h2("Si ta lexosh")
+        h2("How to read this")
         for ((s, t) in listOf(
-            Sev.CRIT to "Mikrofoni ose kamera u përdor kur app-i nuk ishte në ekran, ose kur ekrani ishte i fikur.",
-            Sev.HIGH to "Kontaktet, SMS, thirrjet ose clipboard u lexuan në background.",
-            Sev.MED to "Vendndodhja në background, ose mikrofon/kamera nga një shërbim me njoftim (p.sh. thirrje). Shpesh normale, por kontrolloje.",
-            Sev.INFO to "Përdorim i dukshëm, ndërsa e kishe app-in hapur.",
+            Sev.CRIT to "The microphone or camera was used while the app was not on screen, or while the screen was off.",
+            Sev.HIGH to "Contacts, SMS, call log or clipboard were read in the background.",
+            Sev.MED to "Location in the background, or microphone/camera from a service with a notification (e.g. a call). Often normal, but check it.",
+            Sev.INFO to "Visible use while you had the app open.",
         )) {
             val l = layout("${s.label} – $t", tp(8.5f), CW)
             need(l.height + 3f)
@@ -287,45 +287,45 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
             c.save(); c.translate(M + 70, y); rest.draw(c); c.restore()
             y += rest.height + 3
         }
-        note("“Background” do të thotë që Android-i vetë e ka regjistruar app-in jashtë ekranit në momentin e qasjes. " +
-            "Asistentët zanorë (Google, Bixby) dhe thirrjet shënohen veçmas, sepse dëgjimi në background është funksioni i tyre.")
+        note("“Background” means Android itself recorded the app as off screen at the moment of access. " +
+            "Voice assistants (Google, Bixby) and calls are marked separately, because listening in the background is their job.")
     }
 
     private fun day(d: DayReport) {
         newPage()
         h1(dayTitle(d.day))
-        sub(if (d.screen.isNotEmpty()) "Me të dhëna të ekranit (ndezur/fikur)" else "Pa të dhëna të ekranit – ndize monitorimin në app")
+        sub(if (d.screen.isNotEmpty()) "With screen on/off data" else "No screen data – turn on monitoring in the app")
         y += 4
         kpis(listOf(
-            Triple("${d.crit}", "Kritike", red(d.crit)),
-            Triple("${d.high}", "Të larta", if (d.high > 0) Sev.HIGH.color else null),
-            Triple("${d.micN}×", "Mikrofon · ${fmtDur(d.micMs)}", null),
-            Triple("${d.camN}×", "Kamera · ${fmtDur(d.camMs)}", null),
-            Triple("${d.locN}×", "Vendndodhje", null),
-            Triple(fmtBytes(d.txBg), "Dërguar në background", null),
+            Triple("${d.crit}", "Critical", red(d.crit)),
+            Triple("${d.high}", "High", if (d.high > 0) Sev.HIGH.color else null),
+            Triple("${d.micN}×", "Microphone · ${fmtDur(d.micMs)}", null),
+            Triple("${d.camN}×", "Camera · ${fmtDur(d.camMs)}", null),
+            Triple("${d.locN}×", "Location", null),
+            Triple(fmtBytes(d.txBg), "Sent in background", null),
         ))
         timeline(d)
 
-        h2("Sinjalizime")
-        if (d.alerts.isEmpty()) text("Asnjë qasje e dyshimtë këtë ditë.", 8.5f)
+        h2("Alerts")
+        if (d.alerts.isEmpty()) text("No suspicious access this day.", 8.5f)
         else {
             val groups = LinkedHashMap<List<String>, G>()
             for (e in d.alerts) {
                 val st = when {
-                    e.e.kind == "reject" -> "U bllokua"
-                    e.screenOn == false -> "Ekran i fikur"
+                    e.e.kind == "reject" -> "Blocked"
+                    e.screenOn == false -> "Screen off"
                     else -> Ops.stateLabel[e.e.state] ?: e.e.state
                 }
                 val g = groups.getOrPut(listOf(e.e.pkg, e.label, e.sev.name, e.e.kind)) { G(e) }
                 g.times += e.e.ts; g.ms += e.e.durationMs; g.states += st
             }
-            table(listOf("Ora", "App", "Çfarë", "Gjendja", "Kohë", "Niveli", "Pse"),
+            table(listOf("Time", "App", "What", "State", "Duration", "Level", "Why"),
                 groups.values.take(25).map { g ->
                     val t = g.times
                     val whenS = when {
                         t.size == 1 -> hm(t[0])
                         t.size <= 3 -> t.joinToString(", ") { hm(it) }
-                        else -> "${hm(t.min())}–${hm(t.max())}\n${t.size} herë"
+                        else -> "${hm(t.min())}–${hm(t.max())}\n${t.size} times"
                     }
                     listOf(Cell(whenS), Cell(names.name(g.e.e.pkg), bold = true),
                         Cell(g.e.label + if (t.size > 1) " ×${t.size}" else ""), Cell(g.states.joinToString(", ")),
@@ -333,84 +333,84 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
                 }, listOf(.10f, .13f, .15f, .12f, .09f, .10f, .31f))
         }
 
-        h2("Çfarë u përdor dhe u regjistrua")
+        h2("What was used and recorded")
         val us = d.usage.entries.filter { it.value.count > 0 || it.value.reject > 0 }
             .sortedWith(compareBy({ -it.value.bg }, { if (it.key.third == "mic") 0 else if (it.key.third == "cam") 1 else 2 }, { -it.value.ms }))
-        if (us.isEmpty()) text("Nuk u regjistrua asnjë qasje.", 8.5f)
+        if (us.isEmpty()) text("No access was recorded.", 8.5f)
         else {
-            table(listOf("App", "Çfarë", "Herë", "Kohëzgjatja", "Jashtë ekranit", "Ora", "Bllokuar"),
+            table(listOf("App", "What", "Times", "Duration", "Off screen", "Time", "Blocked"),
                 us.take(30).map { (k, v) ->
                     listOf(Cell(names.name(k.first), bold = true), Cell(k.second), Cell("${v.count}"),
                         Cell(if (v.ms > 0) fmtDur(v.ms) else "–"),
                         if (v.bg > 0) Cell("${v.bg}× · ${fmtDur(v.bgMs)}", Sev.CRIT.color, true) else Cell("–"),
                         Cell(if (v.first > 0) "${hm(v.first)}–${hm(v.last)}" else "–"), Cell(if (v.reject > 0) "${v.reject}" else "–"))
                 }, listOf(.17f, .21f, .07f, .14f, .17f, .14f, .10f))
-            note("Kohëzgjatja jepet për mikrofon, kamera dhe vendndodhje; për të dhënat e tjera Android-i regjistron vetëm momentin e leximit.")
+            note("Duration is given for microphone, camera and location; for other data Android only records the moment it was read.")
         }
 
-        h2("Çfarë u dërgua në internet")
+        h2("What was sent to the internet")
         val net = d.net.entries.filter { it.value.tx > 0 }.sortedByDescending { it.value.txBg }.take(15)
-        if (net.isEmpty()) text("S'ka statistika rrjeti (jep lejen “Usage access”).", 8.5f)
+        if (net.isEmpty()) text("No network statistics (grant “Usage access”).", 8.5f)
         else {
             val bgApps = d.alerts.filter { it.sev == Sev.CRIT || it.sev == Sev.HIGH }.map { it.e.pkg }.toSet()
-            table(listOf("App", "Dërguar gjithsej", "Dërguar në background", "Me data celulare", "Marrë", "Shënim"),
+            table(listOf("App", "Sent total", "Sent in background", "On mobile data", "Received", "Note"),
                 net.map { (pkg, v) ->
                     val share = if (v.tx > 0) v.txBg * 100 / v.tx else 0
                     val n = when {
-                        pkg in bgApps -> Cell("Përdori edhe sensorë në background këtë ditë", Sev.CRIT.color)
-                        share > 60 && v.txBg > 1_048_576 -> Cell("Shumica u dërgua pa e pasur app-in hapur")
+                        pkg in bgApps -> Cell("Also used sensors in the background this day", Sev.CRIT.color)
+                        share > 60 && v.txBg > 1_048_576 -> Cell("Most was sent without the app open")
                         else -> Cell("")
                     }
                     listOf(Cell(names.name(pkg), bold = true), Cell(fmtBytes(v.tx)), Cell("${fmtBytes(v.txBg)} ($share%)"),
                         Cell(fmtBytes(v.mobileTx)), Cell(fmtBytes(v.rx)), n)
                 }, listOf(.17f, .14f, .19f, .14f, .12f, .24f))
-            note("Sasitë vijnë nga statistikat e rrjetit të Android-it; tregojnë sa, jo çfarë përmbajtje u dërgua.")
+            note("Amounts come from Android network statistics; they show how much, not what content was sent.")
         }
 
-        h2("Kujt iu dërgua: brokerë të dhënash, reklama, gjurmues")
+        h2("Who it was sent to: data brokers, ads, trackers")
         val flat = d.trackers.flatMap { (pkg, m) -> m.map { (t, u) -> Triple(pkg, t, u) } }
             .sortedWith(compareBy({ -(Trackers.weight[it.second.category] ?: 1) }, { -it.third.count }))
         when {
-            flat.isNotEmpty() -> table(listOf("App", "Kompania", "Kategoria", "Kërkesa", "Domain-et"),
+            flat.isNotEmpty() -> table(listOf("App", "Company", "Category", "Requests", "Domains"),
                 flat.take(25).map { (pkg, t, u) ->
                     val col = if ((Trackers.weight[t.category] ?: 1) >= 3) Sev.CRIT.color else null
                     listOf(Cell(names.name(pkg), bold = true), Cell(t.company, col, true), Cell(t.category),
                         Cell("${u.count}"), Cell(u.hosts.sorted().take(3).joinToString(", ") + if (u.hosts.size > 3) " …" else "", small = true))
                 }, listOf(.16f, .19f, .22f, .09f, .34f))
-            d.hasConnData -> text("Asnjë lidhje me trackera të njohur këtë ditë.", 8.5f)
-            else -> text("Ndize “Regjistro adresat (VPN lokale)” në app për të parë kujt i dërgon çdo app.", 8.5f)
+            d.hasConnData -> text("No connections to known trackers this day.", 8.5f)
+            else -> text("Turn on “Record destinations (local VPN)” in the app to see who each app sends to.", 8.5f)
         }
 
         if (d.flows.isNotEmpty()) {
-            h2("Çfarë mori dhe kujt ia çoi")
-            table(listOf("App", "Mori", "Ia çoi", "Pas marrjes", "Bllokuar"),
+            h2("What it took and where it sent it")
+            table(listOf("App", "Took", "Sent to", "After taking", "Blocked"),
                 d.flows.take(20).map { f ->
                     listOf(
                         Cell(names.name(f.pkg), bold = true),
                         Cell(f.took.entries.joinToString { (k, n) -> k + (if (n > 1) " ×$n" else "") + if (k in f.bgTook) " (bg)" else "" }
                             .ifEmpty { "–" }, if (f.bgTook.isNotEmpty()) Sev.HIGH.color else null),
                         Cell(f.to.keys.joinToString { it.company }),
-                        Cell(f.links.joinToString("\n") { "${hm(it.ts)} ${it.what} → ${it.company} pas ${fmtDur(it.afterMs)}" }.ifEmpty { "–" },
+                        Cell(f.links.joinToString("\n") { "${hm(it.ts)} ${it.what} → ${it.company} after ${fmtDur(it.afterMs)}" }.ifEmpty { "–" },
                             if (f.links.isNotEmpty()) Sev.CRIT.color else null, small = true),
                         Cell(if (f.blocked > 0) "${f.blocked}" else "–"),
                     )
                 }, listOf(.15f, .25f, .2f, .3f, .1f))
-            note("“Pas marrjes”: i njëjti app kontaktoi tracker-in brenda 10 minutave pasi lexoi të dhënën. " +
-                "Është lidhje në kohë, jo provë që pikërisht ajo e dhënë u dërgua; DNS-ja tregon kujt, jo çfarë.")
+            note("“After taking”: the same app contacted the tracker within 10 minutes of reading the data. " +
+                "This is a link in time, not proof that exactly that data was sent; DNS shows to whom, not what.")
         }
     }
 
     private fun method() {
         newPage()
-        h1("Si u mblodhën të dhënat dhe kufizimet")
+        h1("How the data was collected, and limits")
         for (t in listOf(
-            "Mikrofon, kamera, vendndodhje, kontakte, clipboard – nga regjistri AppOps i Android-it, i njëjti burim që përdor paneli i privatësisë. " +
-                "Në mënyrën e kufizuar, nga njoftimet e sistemit kur mikrofoni/kamera ndizet.",
-            "Sa të dhëna u dërguan – nga statistikat e rrjetit të Android-it, të ndara në plan të parë dhe background.",
-            "Kujt iu dërguan – nga VPN-ja lokale e app-it, që regjistron vetëm emrat e serverave (DNS) për çdo app. " +
-                "App-et që përdorin DNS të vetin të enkriptuar nuk duken këtu.",
-            "Kufizime: mjeti tregon kur dhe sa, jo përmbajtjen. Një app që do anashkalonte vetë regjistrin e sistemit nuk do dukej. " +
-                "Një sinjalizim do të thotë “kontrolloje”, jo provë automatike përgjimi.",
+            "Microphone, camera, location, contacts, clipboard – from Android's AppOps log, the same source the Privacy dashboard uses. " +
+                "In Limited mode, from system callbacks when the microphone/camera turns on.",
+            "How much data was sent – from Android network statistics, split into foreground and background.",
+            "Who it was sent to – from the app's local VPN, which records only server names (DNS) per app. " +
+                "Apps that use their own encrypted DNS do not show up here.",
+            "Limits: the tool shows when and how much, not the content. An app that bypassed the system log itself would not show up. " +
+                "An alert means “check this”, not automatic proof of spying.",
         )) { text(t, 8.5f, gapAfter = 7f) }
     }
 

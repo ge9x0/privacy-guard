@@ -17,10 +17,10 @@ class App : Application() {
         runCatching { java.security.Security.insertProviderAt(Conscrypt.newProvider(), 1) }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannels(listOf(
-            NotificationChannel(CH_MONITOR, "Monitorimi", NotificationManager.IMPORTANCE_MIN),
-            NotificationChannel(CH_ALERTS, "Sinjalizime", NotificationManager.IMPORTANCE_HIGH),
-            NotificationChannel(CH_REPORTS, "Raportet ditore", NotificationManager.IMPORTANCE_DEFAULT),
-            NotificationChannel(CH_SETUP, "Konfigurimi", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(CH_MONITOR, "Monitoring", NotificationManager.IMPORTANCE_MIN),
+            NotificationChannel(CH_ALERTS, "Alerts", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(CH_REPORTS, "Daily reports", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CH_SETUP, "Setup", NotificationManager.IMPORTANCE_HIGH),
         ))
         Scheduler.schedule(this)
         if (Prefs.monitor(this)) runCatching { MonitorService.start(this) }

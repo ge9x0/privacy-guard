@@ -80,8 +80,8 @@ object Blocker {
     private val fgCapable = setOf("mic", "cam", "loc")
     fun limitMode(op: String) = if (Ops.map[op]?.second in fgCapable) "foreground" else "ignore"
     fun limitLabel(op: String, label: String) =
-        if (limitMode(op) == "foreground") "$label: lejo vetëm kur e përdor"
-        else "$label: blloko plotësisht (app-i merr listë bosh)"
+        if (limitMode(op) == "foreground") "$label: allow only while in use"
+        else "$label: block completely (app gets an empty list)"
 
     // Android 17 i pranon vetem ne nivel uid per lejet runtime; ne nivel package i kthen ne heshtje
     fun cmdSet(pkg: String, op: String, mode: String) = "appops set --uid $pkg $op $mode"
@@ -107,38 +107,38 @@ object Blocker {
         val mode = limitMode(op)
         val cmds = ops.map { cmdSet(pkg, it, mode) }
         if (!Shell.adbConnected(ctx, true)) return Result.Manual(
-            "Për këtë duhet Wireless debugging i lidhur (Mënyra B). Ose çaktivizoje vetë te Settings, " +
-                "ose ekzekuto nga kompjuteri:", cmds.map { "adb shell $it" })
+            "This needs Wireless debugging connected (Setup → Full access, option B). Or turn it off yourself in Settings, " +
+                "or run from a computer:", cmds.map { "adb shell $it" })
         val e = p(ctx).edit()
         for (o in ops) {
             val prev = uidMode(ctx, pkg, o) ?: "allow"
-            val r = runCatching { Shell.adb(ctx, cmdSet(pkg, o, mode)) }.getOrElse { "gabim: ${it.message}" }
+            val r = runCatching { Shell.adb(ctx, cmdSet(pkg, o, mode)) }.getOrElse { "error: ${it.message}" }
             Log.i(TAG, "limit $pkg $o -> $mode (ishte $prev): ${r.trim()}")
-            if (r.isNotBlank()) { e.apply(); return Result.Done("Dështoi: ${r.trim()}") }
+            if (r.isNotBlank()) { e.apply(); return Result.Done("Failed: ${r.trim()}") }
             val now = uidMode(ctx, pkg, o)
             if (now != mode) {
                 Log.w(TAG, "limit $pkg $o: Android-i e la '$now'")
                 e.apply()
                 return Result.Manual(
-                    "Android-i nuk e lejoi ndryshimin për këtë app (mbeti \"${now ?: "allow"}\"), zakonisht sepse është app sistemi. " +
-                        "Hiqe lejen vetë te Settings → Permissions.", emptyList())
+                    "Android did not allow this change for this app (it stayed \"${now ?: "allow"}\"), usually because it is a system app. " +
+                        "Remove the permission yourself in Settings → Permissions.", emptyList())
             }
             if (!p(ctx).contains("op:$pkg|$o")) e.putString("op:$pkg|$o", prev)
         }
         e.apply()
-        return Result.Done(if (mode == "foreground") "U kufizua: tani lejohet vetëm kur app-i është në përdorim."
-            else "U bllokua: app-i tani merr listë bosh. \"Rikthe\" te hapi 5 e kthen.")
+        return Result.Done(if (mode == "foreground") "Limited: now allowed only while the app is in use."
+            else "Blocked: the app now gets an empty list. \"Restore\" under Blocking undoes it.")
     }
 
     fun restore(ctx: Context, key: String): Result {
-        val prev = p(ctx).getString("op:$key", null) ?: return Result.Done("S'ka asgjë për të rikthyer.")
+        val prev = p(ctx).getString("op:$key", null) ?: return Result.Done("Nothing to restore.")
         val (pkg, op) = key.split('|', limit = 2)
         val cmd = cmdSet(pkg, op, prev)
-        if (!Shell.adbConnected(ctx, true)) return Result.Manual("Për rikthim duhet Wireless debugging, ose nga kompjuteri:", listOf("adb shell $cmd"))
-        val r = runCatching { Shell.adb(ctx, cmd) }.getOrElse { "gabim: ${it.message}" }
-        if (r.isNotBlank()) return Result.Done("Dështoi: ${r.trim()}")
+        if (!Shell.adbConnected(ctx, true)) return Result.Manual("Restoring needs Wireless debugging, or run from a computer:", listOf("adb shell $cmd"))
+        val r = runCatching { Shell.adb(ctx, cmd) }.getOrElse { "error: ${it.message}" }
+        if (r.isNotBlank()) return Result.Done("Failed: ${r.trim()}")
         p(ctx).edit().remove("op:$key").apply()
-        return Result.Done("U rikthye ($prev).")
+        return Result.Done("Restored ($prev).")
     }
 
     fun openAppSettings(ctx: Context, pkg: String) = runCatching {

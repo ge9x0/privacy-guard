@@ -16,9 +16,9 @@ import java.util.concurrent.TimeUnit
  *  LIMITED - asnjera s'eshte aktive: vetem callback-et e kameres/mikrofonit.
  */
 enum class Mode(val label: String, val desc: String) {
-    DIRECT("E plotë (leje e përhershme)", "Historiku i plotë lexohet direkt, edhe pas restartimit."),
-    ADB("E plotë (Wireless debugging)", "Historiku i plotë lexohet përmes lidhjes me vetveten. Pas restartimit duhet riaktivizuar."),
-    LIMITED("E kufizuar", "Dihet kur u përdor mikrofoni/kamera, por jo gjithmonë nga cili app."),
+    DIRECT("Full access (permanent)", "Full history is read directly, also after a restart."),
+    ADB("Full access (Wireless debugging)", "Full history is read through a local debug connection. Must be reconnected after a restart."),
+    LIMITED("Limited", "Shows when the microphone/camera was used, but not always by which app."),
 }
 
 object Shell {
@@ -105,7 +105,7 @@ object Shell {
         )
         val log = StringBuilder()
         for (c in cmds) {
-            val r = runCatching { adb(ctx, c) }.getOrElse { "gabim: ${it.message}" }
+            val r = runCatching { adb(ctx, c) }.getOrElse { "error: ${it.message}" }
             log.append("$ ").append(c).append('\n').append(r.trim()).append('\n')
         }
         directOk = null

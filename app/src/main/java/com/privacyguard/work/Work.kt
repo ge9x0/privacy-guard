@@ -55,8 +55,8 @@ object Reports {
         val pi = PendingIntent.getActivity(ctx, 7, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val n = Notification.Builder(ctx, App.CH_REPORTS)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("Raporti i sotëm është gati")
-            .setContentText(if (crit > 0) "$crit sinjalizime kritike – shiko raportin" else "Asnjë sinjalizim kritik sot")
+            .setContentTitle("Today's report is ready")
+            .setContentText(if (crit > 0) "$crit critical alerts – open the report" else "No critical alerts today")
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()
@@ -77,7 +77,7 @@ class DailyReportWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx
         val ctx = applicationContext
         runCatching { Collector.snapshot(ctx) }
         val today = LocalDate.now()
-        val uri = Reports.create(ctx, listOf(today), "raporti_$today.pdf")
+        val uri = Reports.create(ctx, listOf(today), "privacy_report_$today.pdf")
         if (uri != null) Reports.notifyReady(ctx, uri, Analyzer(ctx).build(today).crit)
         Result.success()
     }.getOrElse { Log.w("PG.Work", "report", it); Result.retry() }

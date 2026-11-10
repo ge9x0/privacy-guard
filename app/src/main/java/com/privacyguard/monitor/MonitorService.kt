@@ -84,7 +84,7 @@ class MonitorService : Service() {
         thread = HandlerThread("pg-monitor").apply { start() }
         worker = Handler(thread.looper)
         startForeground(
-            App.NOTIF_MONITOR, ongoing("Po monitoroj mikrofonin dhe kamerën"),
+            App.NOTIF_MONITOR, ongoing("Watching the microphone and camera"),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
@@ -152,7 +152,7 @@ class MonitorService : Service() {
             micScreenOn = screenOn()
             micPkgs = attribute(isMic = true)
             Log.i(TAG, "mic ON screen=$micScreenOn call=${inCall()} pkgs=$micPkgs")
-            if (!micScreenOn && !inCall()) alertOff("Mikrofoni", micPkgs)
+            if (!micScreenOn && !inCall()) alertOff("Microphone", micPkgs)
         } else if (!active && micStart != 0L) {
             record(if (inCall()) "PHONE_CALL_MICROPHONE" else "RECORD_AUDIO", micPkgs, micStart, now, micScreenOn)
             micStart = 0L
@@ -167,7 +167,7 @@ class MonitorService : Service() {
                 camScreenOn = screenOn()
                 camPkgs = attribute(isMic = false)
                 Log.i(TAG, "cam ON id=$id screen=$camScreenOn pkgs=$camPkgs")
-                if (!camScreenOn) alertOff("Kamera", camPkgs)
+                if (!camScreenOn) alertOff("Camera", camPkgs)
             }
             camStart.putIfAbsent(id, now)
         } else {
@@ -198,11 +198,11 @@ class MonitorService : Service() {
     private fun alertOff(what: String, pkgs: Set<String>) {
         val real = pkgs.filter { it !in Ops.knownSystem }
         if (pkgs.isNotEmpty() && real.isEmpty()) { Log.i(TAG, "alert $what: vetem app sistemi $pkgs"); return }   // p.sh. Google Assistant
-        val who = if (real.isEmpty()) "app i panjohur" else real.joinToString { names.name(it) }
+        val who = if (real.isEmpty()) "unknown app" else real.joinToString { names.name(it) }
         val n = Notification.Builder(this, App.CH_ALERTS)
             .setSmallIcon(R.drawable.ic_launcher)
-            .setContentTitle("$what u aktivizua me ekran të fikur")
-            .setContentText("Nga: $who")
+            .setContentTitle("$what turned on while the screen was off")
+            .setContentText("By: $who")
             .setContentIntent(openApp())
             .setAutoCancel(true)
             .build()
@@ -224,7 +224,7 @@ class MonitorService : Service() {
 
     private fun updateOngoing() {
         getSystemService(NotificationManager::class.java)
-            .notify(App.NOTIF_MONITOR, ongoing("Mënyra: ${mode.label}"))
+            .notify(App.NOTIF_MONITOR, ongoing("Mode: ${mode.label}"))
     }
 
     companion object {

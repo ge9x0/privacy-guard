@@ -2,13 +2,13 @@ package com.privacyguard.core
 
 /** Lista e brokereve te te dhenave, rrjeteve te reklamave dhe SDK-ve te gjurmimit. */
 object Trackers {
-    const val BROKER = "Broker të dhënash / vendndodhje"
-    const val ADS = "Rrjet reklamash"
-    const val ATTR = "Atribuim / gjurmim instalimesh"
-    const val ANALYTICS = "Analitikë / profilizim"
+    const val BROKER = "Data / location broker"
+    const val ADS = "Ad network"
+    const val ATTR = "Attribution / install tracking"
+    const val ANALYTICS = "Analytics / profiling"
     const val META = "Meta (Facebook, Instagram, WhatsApp)"
-    const val GOOGLE = "Google reklama / analitikë"
-    const val SAMSUNG = "Samsung reklama / analitikë"
+    const val GOOGLE = "Google ads / analytics"
+    const val SAMSUNG = "Samsung ads / analytics"
     const val BYTEDANCE = "ByteDance / TikTok"
 
     data class T(val company: String, val category: String)
@@ -105,8 +105,8 @@ object Trackers {
         "clevertap.com" to T("CleverTap", ANALYTICS),
         "wzrkt.com" to T("CleverTap", ANALYTICS),
         "moengage.com" to T("MoEngage", ANALYTICS),
-        "uxcam.com" to T("UXCam (regjistron ekranin)", ANALYTICS),
-        "smartlook.com" to T("Smartlook (regjistron ekranin)", ANALYTICS),
+        "uxcam.com" to T("UXCam (records the screen)", ANALYTICS),
+        "smartlook.com" to T("Smartlook (records the screen)", ANALYTICS),
         "hotjar.com" to T("Hotjar", ANALYTICS),
         "graph.facebook.com" to T("Meta Graph API", META),
         "facebook.com" to T("Meta", META),

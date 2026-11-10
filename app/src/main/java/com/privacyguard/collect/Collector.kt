@@ -39,7 +39,7 @@ object Collector {
             val evs = AppOpsParser.parse(txt)
             read = evs.size
             new = db.addAccess(evs)
-            if (!txt.contains("iscrete")) note = "Ky Android nuk dha historik të plotë; u ruajt vetëm qasja e fundit për çdo app."
+            if (!txt.contains("iscrete")) note = "This Android version gave no detailed history; only the last access per app was saved."
             if (txt.isNotEmpty()) RawStore.save(ctx, "appops", txt)
         }
         val net = if (hasUsageAccess(ctx)) netStats(ctx, 7) else emptyList()

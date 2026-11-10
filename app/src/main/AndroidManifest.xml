@@ -46,7 +46,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Monitoron perdorimin e mikrofonit dhe kameres per privatesine e perdoruesit" />
+                android:value="Monitors microphone and camera use for the user's privacy" />
         </service>
 
         <service
