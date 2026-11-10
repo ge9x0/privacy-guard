@@ -101,6 +101,17 @@ object Blocker {
             val r = runCatching { Shell.adb(ctx, cmdLimit(pkg, o)) }.getOrElse { "gabim: ${it.message}" }
             Log.i(TAG, "limit $pkg $o (ishte $prev): ${r.trim()}")
             if (r.isNotBlank()) return Result.Done("Dështoi: ${r.trim()}")
+            // Android-i mund ta refuzoje ne heshtje (p.sh. app-et e sistemit me uid te ndare):
+            // kontrollojme qe ndryshimi zuri vend para se te themi "u kufizua"
+            val after = runCatching { Shell.adb(ctx, "appops get $pkg $o") }.getOrDefault("")
+            val now = Regex("""$o: (\w+)""").find(after)?.groupValues?.get(1)
+            if (now != "foreground") {
+                Log.w(TAG, "limit $pkg $o: Android-i e la '$now'")
+                e.apply()
+                return Result.Manual(
+                    "Android-i nuk e lejoi ndryshimin për këtë app (mbeti \"$now\"), zakonisht sepse është app sistemi. " +
+                        "Hiqe lejen vetë te Settings → Permissions.", emptyList())
+            }
             if (!p(ctx).contains("op:$pkg|$o")) e.putString("op:$pkg|$o", prev)
         }
         e.apply()

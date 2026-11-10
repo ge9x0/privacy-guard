@@ -381,13 +381,13 @@ private fun ManualCard(pkg: String, r: Blocker.Result.Manual, onClose: () -> Uni
     SectionCard {
         Text("Bëje vetë", fontWeight = FontWeight.SemiBold)
         Text(r.msg, fontSize = 13.sp)
-        SelectionContainer {
+        if (r.commands.isNotEmpty()) SelectionContainer {
             Text(r.commands.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp)).padding(8.dp))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { Blocker.openAppSettings(ctx, pkg) }) { Text("Hap Settings") }
-            OutlinedButton(onClick = {
+            if (r.commands.isNotEmpty()) OutlinedButton(onClick = {
                 ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("cmd", r.commands.joinToString("\n")))
             }) { Text("Kopjo") }
             TextButton(onClick = onClose) { Text("Mbyll") }
