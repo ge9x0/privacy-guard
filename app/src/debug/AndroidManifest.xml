@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Vetem ne versionin debug: prova e njoftimit "mikrofoni me ekran te fikur". -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <application>
+        <!-- vetem adb/sistemi (kane DUMP) mund ta nisin -->
+        <receiver
+            android:name=".debug.TestMicReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+    </application>
+</manifest>

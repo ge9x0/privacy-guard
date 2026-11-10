@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.privacyguard.App
 import com.privacyguard.R
@@ -150,6 +151,7 @@ class MonitorService : Service() {
             micStart = now
             micScreenOn = screenOn()
             micPkgs = attribute(isMic = true)
+            Log.i(TAG, "mic ON screen=$micScreenOn call=${inCall()} pkgs=$micPkgs")
             if (!micScreenOn && !inCall()) alertOff("Mikrofoni", micPkgs)
         } else if (!active && micStart != 0L) {
             record(if (inCall()) "PHONE_CALL_MICROPHONE" else "RECORD_AUDIO", micPkgs, micStart, now, micScreenOn)
@@ -164,6 +166,7 @@ class MonitorService : Service() {
             if (camStart.isEmpty()) {
                 camScreenOn = screenOn()
                 camPkgs = attribute(isMic = false)
+                Log.i(TAG, "cam ON id=$id screen=$camScreenOn pkgs=$camPkgs")
                 if (!camScreenOn) alertOff("Kamera", camPkgs)
             }
             camStart.putIfAbsent(id, now)
@@ -194,7 +197,7 @@ class MonitorService : Service() {
     // ------------------------------------------------------------------ njoftimet
     private fun alertOff(what: String, pkgs: Set<String>) {
         val real = pkgs.filter { it !in Ops.knownSystem }
-        if (pkgs.isNotEmpty() && real.isEmpty()) return   // p.sh. Google Assistant
+        if (pkgs.isNotEmpty() && real.isEmpty()) { Log.i(TAG, "alert $what: vetem app sistemi $pkgs"); return }   // p.sh. Google Assistant
         val who = if (real.isEmpty()) "app i panjohur" else real.joinToString { names.name(it) }
         val n = Notification.Builder(this, App.CH_ALERTS)
             .setSmallIcon(R.drawable.ic_launcher)
@@ -203,6 +206,7 @@ class MonitorService : Service() {
             .setContentIntent(openApp())
             .setAutoCancel(true)
             .build()
+        Log.i(TAG, "alert $what: njoftim per $who")
         getSystemService(NotificationManager::class.java).notify((System.currentTimeMillis() % 100000).toInt(), n)
     }
 
@@ -224,6 +228,7 @@ class MonitorService : Service() {
     }
 
     companion object {
+        private const val TAG = "PG.Monitor"
         fun start(ctx: Context) = ctx.startForegroundService(Intent(ctx, MonitorService::class.java))
         fun stop(ctx: Context) = ctx.stopService(Intent(ctx, MonitorService::class.java))
     }
