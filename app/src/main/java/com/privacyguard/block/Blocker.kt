@@ -76,7 +76,15 @@ object Blocker {
     fun limited(ctx: Context): Map<String, String> =
         p(ctx).all.filterKeys { it.startsWith("op:") }.map { (k, v) -> k.removePrefix("op:") to v.toString() }.toMap()
 
-    fun cmdLimit(pkg: String, op: String) = "appops set $pkg $op foreground"
+    /** Vetem keto op-e kane "vetem kur e perdor" ne Android; te tjerat jane lejo/blloko. */
+    private val fgCapable = setOf("mic", "cam", "loc")
+    fun limitMode(op: String) = if (Ops.map[op]?.second in fgCapable) "foreground" else "ignore"
+    fun limitLabel(op: String, label: String) =
+        if (limitMode(op) == "foreground") "$label: lejo vetëm kur e përdor"
+        else "$label: blloko plotësisht (app-i merr listë bosh)"
+
+    // Android 17 i pranon vetem ne nivel uid per lejet runtime; ne nivel package i kthen ne heshtje
+    fun cmdSet(pkg: String, op: String, mode: String) = "appops set --uid $pkg $op $mode"
 
     sealed class Result(val msg: String) {
         class Done(msg: String) : Result(msg)
@@ -84,44 +92,48 @@ object Blocker {
         class Manual(msg: String, val commands: List<String>) : Result(msg)
     }
 
+    private fun uidMode(ctx: Context, pkg: String, op: String): String? {
+        val out = runCatching { Shell.adb(ctx, "appops get --uid $pkg $op") }.getOrDefault("")
+        // "Uid mode: OP: ignore" kur ka kufizim ne nivel uid; perndryshe s'ka (= allow)
+        return Regex("""Uid mode: $op: (\w+)""").find(out)?.groupValues?.get(1)
+    }
+
     /**
-     * "Lejo vetem kur e perdor": app-i e merr mikrofonin/kameren/kontaktet vetem kur eshte ne ekran
-     * ose ka njoftim te dukshem; ne background merr "refuzim".
+     * Mikrofoni/kamera/vendndodhja: "vetem kur e perdor" (foreground). Kontaktet, thirrjet, SMS,
+     * clipboard...: Android-i s'ka mes, keshtu qe bllokohen plotesisht (ignore). Verifikohet pas.
      */
     fun limit(ctx: Context, pkg: String, op: String): Result {
         val ops = opsFor(op)
-        val cmds = ops.map { cmdLimit(pkg, it) }
+        val mode = limitMode(op)
+        val cmds = ops.map { cmdSet(pkg, it, mode) }
         if (!Shell.adbConnected(ctx, true)) return Result.Manual(
             "Për këtë duhet Wireless debugging i lidhur (Mënyra B). Ose çaktivizoje vetë te Settings, " +
                 "ose ekzekuto nga kompjuteri:", cmds.map { "adb shell $it" })
         val e = p(ctx).edit()
         for (o in ops) {
-            val before = runCatching { Shell.adb(ctx, "appops get $pkg $o") }.getOrDefault("")
-            val prev = Regex("""$o: (\w+)""").find(before)?.groupValues?.get(1) ?: "default"
-            val r = runCatching { Shell.adb(ctx, cmdLimit(pkg, o)) }.getOrElse { "gabim: ${it.message}" }
-            Log.i(TAG, "limit $pkg $o (ishte $prev): ${r.trim()}")
-            if (r.isNotBlank()) return Result.Done("Dështoi: ${r.trim()}")
-            // Android-i mund ta refuzoje ne heshtje (p.sh. app-et e sistemit me uid te ndare):
-            // kontrollojme qe ndryshimi zuri vend para se te themi "u kufizua"
-            val after = runCatching { Shell.adb(ctx, "appops get $pkg $o") }.getOrDefault("")
-            val now = Regex("""$o: (\w+)""").find(after)?.groupValues?.get(1)
-            if (now != "foreground") {
+            val prev = uidMode(ctx, pkg, o) ?: "allow"
+            val r = runCatching { Shell.adb(ctx, cmdSet(pkg, o, mode)) }.getOrElse { "gabim: ${it.message}" }
+            Log.i(TAG, "limit $pkg $o -> $mode (ishte $prev): ${r.trim()}")
+            if (r.isNotBlank()) { e.apply(); return Result.Done("Dështoi: ${r.trim()}") }
+            val now = uidMode(ctx, pkg, o)
+            if (now != mode) {
                 Log.w(TAG, "limit $pkg $o: Android-i e la '$now'")
                 e.apply()
                 return Result.Manual(
-                    "Android-i nuk e lejoi ndryshimin për këtë app (mbeti \"$now\"), zakonisht sepse është app sistemi. " +
+                    "Android-i nuk e lejoi ndryshimin për këtë app (mbeti \"${now ?: "allow"}\"), zakonisht sepse është app sistemi. " +
                         "Hiqe lejen vetë te Settings → Permissions.", emptyList())
             }
             if (!p(ctx).contains("op:$pkg|$o")) e.putString("op:$pkg|$o", prev)
         }
         e.apply()
-        return Result.Done("U kufizua: tani lejohet vetëm kur app-i është në përdorim.")
+        return Result.Done(if (mode == "foreground") "U kufizua: tani lejohet vetëm kur app-i është në përdorim."
+            else "U bllokua: app-i tani merr listë bosh. \"Rikthe\" te hapi 5 e kthen.")
     }
 
     fun restore(ctx: Context, key: String): Result {
         val prev = p(ctx).getString("op:$key", null) ?: return Result.Done("S'ka asgjë për të rikthyer.")
         val (pkg, op) = key.split('|', limit = 2)
-        val cmd = "appops set $pkg $op $prev"
+        val cmd = cmdSet(pkg, op, prev)
         if (!Shell.adbConnected(ctx, true)) return Result.Manual("Për rikthim duhet Wireless debugging, ose nga kompjuteri:", listOf("adb shell $cmd"))
         val r = runCatching { Shell.adb(ctx, cmd) }.getOrElse { "gabim: ${it.message}" }
         if (r.isNotBlank()) return Result.Done("Dështoi: ${r.trim()}")

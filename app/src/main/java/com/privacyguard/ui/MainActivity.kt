@@ -348,7 +348,7 @@ private fun TodayCard(d: DayReport, onLimit: (String, String) -> Unit, onNet: (S
                 Column {
                     Text("${an.name(pkg)} · $label" + if (list.size > 1) " ×${list.size}" else "", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Text(list.first().why + if (list.sumOf { it.e.durationMs } > 0) " (${fmtDur(list.sumOf { it.e.durationMs })})" else "", fontSize = 12.sp)
-                    BlockMenu(label, onLimit = { onLimit(pkg, list.first().e.op) }, onNet = { onNet(pkg) })
+                    BlockMenu(Blocker.limitLabel(list.first().e.op, label), onLimit = { onLimit(pkg, list.first().e.op) }, onNet = { onNet(pkg) })
                 }
             }
         }
@@ -365,11 +365,11 @@ private fun Kpi(v: String, l: String, c: Color?) {
 
 
 @Composable
-private fun BlockMenu(label: String, onLimit: () -> Unit, onNet: () -> Unit) {
+private fun BlockMenu(limitText: String, onLimit: () -> Unit, onNet: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     if (!open) { TextButton(onClick = { open = true }) { Text("Blloko…", fontSize = 12.sp) }; return }
     Column {
-        TextButton(onClick = { open = false; onLimit() }) { Text("$label: lejo vetëm kur e përdor", fontSize = 12.sp) }
+        TextButton(onClick = { open = false; onLimit() }) { Text(limitText, fontSize = 12.sp) }
         TextButton(onClick = { open = false; onNet() }) { Text("Blloko internetin e këtij app-i", fontSize = 12.sp) }
         TextButton(onClick = { open = false }) { Text("Anulo", fontSize = 12.sp) }
     }
@@ -430,7 +430,7 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
     Step("5. Bllokimi", trackers || apps.isNotEmpty() || hosts.isNotEmpty() || ops.isNotEmpty(),
         "Ndal trackerat dhe app-et që sillen keq. Bllokimi i rrjetit punon përmes VPN-së lokale" +
             (if (vpn) "." else " – ndize te hapi 4.") +
-            " Kufizimi i lejeve (\"lejo vetëm kur e përdor\") kërkon Wireless debugging; përndryshe hapet Settings.") {
+            " Kufizimi i lejeve kërkon Wireless debugging; përndryshe hapet Settings. Mikrofoni, kamera dhe vendndodhja mund të lejohen \"vetëm kur e përdor\"; kontaktet, thirrjet, SMS dhe clipboard-i vetëm bllokohen plotësisht.") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = trackers, onCheckedChange = { Blocker.setTrackers(ctx, it); onChange() })
             Spacer(Modifier.width(8.dp))
