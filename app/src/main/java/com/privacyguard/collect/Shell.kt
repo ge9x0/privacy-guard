@@ -62,11 +62,21 @@ object Shell {
 
     fun adb(ctx: Context, cmd: String): String {
         val stream = AdbManager.get(ctx).openStream("shell:$cmd")
+        val out = java.io.ByteArrayOutputStream()
         try {
-            return stream.openInputStream().bufferedReader().use { it.readText() }
+            val ins = stream.openInputStream()
+            val buf = ByteArray(8192)
+            while (true) {
+                // libadb 3.1.1: kur telefoni e mbyll stream-in pa dalje (p.sh. "pm grant" i suksesshem),
+                // read() hedh IOException("Stream closed.") ne vend te -1. Ky eshte fundi normal.
+                val n = try { ins.read(buf) } catch (e: java.io.IOException) { if (stream.isClosed) break else throw e }
+                if (n < 0) break
+                out.write(buf, 0, n)
+            }
         } finally {
             runCatching { stream.close() }
         }
+        return out.toString(Charsets.UTF_8.name())
     }
 
     /** Ekzekuton nje komande me menyren me te mire qe kemi; null nese s'kemi asnje. */

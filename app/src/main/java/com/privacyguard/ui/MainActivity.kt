@@ -121,6 +121,8 @@ private fun Home() {
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { block() }.getOrElse { "Gabim: ${it.message}" } }
             busy = null; msg = r; refresh++
+            // mesazhi lart s'duket kur je poshte te konfigurimi
+            if (!r.isNullOrBlank()) android.widget.Toast.makeText(ctx, r, android.widget.Toast.LENGTH_LONG).show()
         }
     }
     fun limit(pkg: String, op: String) = work("Po kufizoj lejen") {
@@ -232,8 +234,10 @@ private fun Home() {
                 }) { Text("Fillo") }
                 OutlinedButton(onClick = {
                     work("Po lidhem") {
-                        if (Shell.adbConnected(ctx, true)) { Shell.selfGrant(ctx); "U lidh." }
-                        else "S'u lidh. A është ndezur Wireless debugging?"
+                        if (Shell.adbConnected(ctx, true)) {
+                            android.util.Log.i("PG.Shell", "Rilidhu: u lidh\n" + Shell.selfGrant(ctx))
+                            "U lidh me Wireless debugging."
+                        } else "S'u lidh. A është ndezur Wireless debugging?"
                     }
                 }) { Text("Rilidhu") }
             }
