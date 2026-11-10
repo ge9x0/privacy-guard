@@ -296,10 +296,10 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
 
 fun fmtDur(ms: Long): String {
     val s = (ms + 500) / 1000
-    if (s < 60) return "$s sek"
+    if (s < 60) return "$s s"
     val m = s / 60
-    if (m < 60) return "$m min ${"%02d".format(s % 60)} s"
-    return "${m / 60} o ${"%02d".format(m % 60)} min"
+    if (m < 60) return "${m}m ${"%02d".format(s % 60)}s"
+    return "${m / 60}h ${"%02d".format(m % 60)}m"
 }
 
 fun fmtBytes(b0: Long): String {
