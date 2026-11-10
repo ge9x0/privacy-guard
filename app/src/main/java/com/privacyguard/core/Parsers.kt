@@ -79,7 +79,7 @@ object AppOpsParser {
         var op: String? = null
         var source = "last"
         var cols: Map<String, Int>? = null
-        for (line in text.lineSequence()) {
+        for (line in text.reader().buffered(1 shl 16).lineSequence()) {
             // Android 16+/17: seksioni discrete eshte tabele "UID|PACKAGE_NAME|...|ACCESS_TIME|...".
             // Dege shtese; formatet e vjetra me poshte mbeten te pandryshuara.
             val t = line.trim()
@@ -93,23 +93,24 @@ object AppOpsParser {
                 if (t.isEmpty()) continue
                 cols = null
             }
-            val low = t.lowercase()
-            if (low.startsWith("discrete accesses") || low.startsWith("discrete ops") ||
-                low.startsWith("discrete registry")
+            // Shpejtesi: cdo regex me poshte provohet vetem kur rreshti mund ta kete (136k rreshta ne Android 17).
+            // Rezultati eshte i njejte; rreshtat qe kapercehen s'mund te perputheshin gjithsesi.
+            if (t.startsWith("discrete accesses", true) || t.startsWith("discrete ops", true) ||
+                t.startsWith("discrete registry", true)
             ) {
                 source = "discrete"; pkg = null; op = null; continue
             }
-            val mu = reUid.find(line)
+            val mu = if (t.startsWith("Uid")) reUid.find(line) else null
             if (mu != null) {
                 uid = uidOf(mu); pkg = null; op = null
                 continue
             }
-            val mp = rePkg.find(line)
+            val mp = if (t.startsWith("Package")) rePkg.find(line) else null
             if (mp != null) {
                 pkg = mp.groupValues[1]; op = null
                 continue
             }
-            val ev = reEvent.find(line)
+            val ev = if (line.contains("Access") || line.contains("Reject")) reEvent.find(line) else null
             if (ev != null) {
                 val p = pkg
                 val o = op
@@ -127,8 +128,9 @@ object AppOpsParser {
                 }
                 continue
             }
-            val m = reOp.find(line)
-            if (m != null && pkg != null) op = m.groupValues[1]
+            // reOp do qe rreshti te mbaroje me emrin e op-it, ':' ose ')'; "BODY_SENSORS: allow" s'mund te perputhet
+            if (pkg != null && t.isNotEmpty() && t[0] in 'A'..'Z' && t.last().let { it == ':' || it == ')' || it == '_' || it in 'A'..'Z' || it in '0'..'9' })
+                reOp.find(line)?.let { op = it.groupValues[1] }
         }
         return out
     }

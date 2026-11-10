@@ -31,20 +31,31 @@ object Collector {
         var read = 0
         var new = 0
         var note: String? = null
+        var t0 = System.currentTimeMillis()
+        fun lap(n: String) { val now = System.currentTimeMillis(); Log.d(TAG, "time $n ${now - t0} ms"); t0 = now }
+        lap("mode")
         if (mode != Mode.LIMITED) {
             var txt = Shell.run(ctx, "dumpsys appops --include-discrete 100000", mode).orEmpty()
             if (txt.length < 200 || txt.take(500).contains("Unknown option")) {
                 txt = Shell.run(ctx, "dumpsys appops", mode).orEmpty()
             }
+            lap("dumpsys")
             val evs = AppOpsParser.parse(txt)
+            lap("parse")
             read = evs.size
-            new = db.addAccess(evs)
+            // prune() i fshin sidoqofte ato me te vjetra se 60 dite; mos i shkruaj fare
+            val cut = System.currentTimeMillis() - 60 * 86_400_000L
+            new = db.addAccess(evs.filter { it.ts >= cut })
+            lap("db access")
             if (!txt.contains("iscrete")) note = "This Android version gave no detailed history; only the last access per app was saved."
             if (txt.isNotEmpty()) RawStore.save(ctx, "appops", txt)
+            lap("raw save")
         }
         val net = if (hasUsageAccess(ctx)) netStats(ctx, 7) else emptyList()
+        lap("netstats")
         db.addNet(net)
         db.prune()
+        lap("db net+prune")
         Log.i(TAG, "mode=$mode read=$read new=$new net=${net.size}")
         return CollectResult(mode, read, new, net.size, note)
     }

@@ -41,12 +41,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
     fun addAccess(events: List<AccessEvent>): Int {
         var n = 0
         writableDatabase.transaction {
-            for (e in events) {
-                val cv = ContentValues().apply {
-                    put("pkg", e.pkg); put("uid", e.uid); put("op", e.op); put("ts", e.ts)
-                    put("duration_ms", e.durationMs); put("state", e.state); put("kind", e.kind); put("source", e.source)
+            // nje komande e pergatitur per te gjitha rreshtat (11k ne cdo mbledhje); -1 = ekzistonte
+            compileStatement("INSERT OR IGNORE INTO access(pkg,uid,op,ts,duration_ms,state,kind,source) VALUES (?,?,?,?,?,?,?,?)").use { st ->
+                for (e in events) {
+                    st.clearBindings()
+                    st.bindString(1, e.pkg); st.bindLong(2, e.uid.toLong()); st.bindString(3, e.op); st.bindLong(4, e.ts)
+                    st.bindLong(5, e.durationMs); st.bindString(6, e.state); st.bindString(7, e.kind); st.bindString(8, e.source)
+                    if (st.executeInsert() != -1L) n++
                 }
-                if (insertWithOnConflict("access", null, cv, SQLiteDatabase.CONFLICT_IGNORE) != -1L) n++
             }
         }
         return n
