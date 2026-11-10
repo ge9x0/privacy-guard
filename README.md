@@ -34,7 +34,7 @@ dhe thuaj: *"Instalo Android SDK (command-line tools, platform 35, build-tools),
 **Me Android Studio:** *Open* → dosja → *Run*.
 
 Gjërat që ka më shumë gjasa të duan rregullim:
-- versioni i `libadb-android` (3.1.1) dhe emrat e metodave të tij (`pair`, `autoConnect`, `openStream`) te `adb/AdbManager.kt` dhe `collect/Shell.kt`
+- `libadb-android` 3.1.1 merret nga JitPack (`com.github.MuntashirAkon`), jo nga Maven Central; API-ja përputhet me kodin
 - importet e Compose te `ui/MainActivity.kt`
 
 ## Testi i Mënyrës A (kur të kesh kompjuterin afër, edhe pa USB)
@@ -45,6 +45,7 @@ adb pair IP:PORTA_E_PAIRING      # shkruaj kodin
 adb connect IP:PORTA             # porta nga ekrani kryesor i Wireless debugging
 adb install app-debug.apk
 adb shell pm grant com.privacyguard android.permission.DUMP
+adb shell pm grant com.privacyguard android.permission.PACKAGE_USAGE_STATS   # Android 17: pa këtë dumpsys appops refuzohet
 ```
 Hape app-in: te *Mënyra e punës* duhet të shkruajë **"E plotë (leje e përhershme)"**. Nëse shkruan "E kufizuar", Samsung-u e bllokon `dumpsys` nga app-et. Atëherë përdoret Mënyra B dhe s'ka nevojë për ndryshime.
 

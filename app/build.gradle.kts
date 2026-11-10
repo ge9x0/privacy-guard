@@ -44,8 +44,10 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // ADB brenda app-it (Wireless debugging me vetveten), si LADB/Shizuku
-    implementation("io.github.muntashirakon:libadb-android:3.1.1")
+    implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
     implementation("org.conscrypt:conscrypt-android:2.5.3")
     // certifikata per celesin ADB
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
+
+    testImplementation("junit:junit:4.13.2")
 }

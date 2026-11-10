@@ -87,6 +87,8 @@ object Shell {
         val cmds = listOf(
             "pm grant $SELF android.permission.DUMP",
             "pm grant $SELF android.permission.GET_APP_OPS_STATS",
+            // Android 17: "dumpsys appops" kerkon edhe kete leje (jo vetem app-op-in GET_USAGE_STATS)
+            "pm grant $SELF android.permission.PACKAGE_USAGE_STATS",
             "appops set $SELF GET_USAGE_STATS allow",
             // Android-i e mban historikun e qasjeve 7 dite ne vend te 1
             "device_config put privacy discrete_history_cutoff_millis 604800000",

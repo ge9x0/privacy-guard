@@ -52,14 +52,48 @@ object AppOpsParser {
         return dt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
     }
 
+    /** Nje rresht i tabeles discrete (Android 16+). Rreshtat me vetem DURATION jane qasje te zgjatura. */
+    private fun tableRow(row: String, c: Map<String, Int>, out: MutableList<AccessEvent>) {
+        val f = row.split('|')
+        fun col(name: String) = c[name]?.let { f.getOrNull(it) }?.trim().orEmpty()
+        val pkg = col("PACKAGE_NAME")
+        val op = col("OP_NAME")
+        if (pkg.isEmpty() || op.isEmpty()) return
+        runCatching {
+            val uid = col("UID").toInt()
+            val ts = parseTs(col("ACCESS_TIME"))
+            val dur = col("DURATION").toLongOrNull() ?: 0L
+            val acc = col("ACCESS_COUNTS").toIntOrNull() ?: 0
+            val rej = col("REJECT_COUNTS").toIntOrNull() ?: 0
+            val state = col("UID_STATE").lowercase().ifEmpty { "unknown" }
+            fun ev(kind: String, d: Long) = AccessEvent(pkg, uid, op, ts, d, state, kind, "discrete")
+            if (acc > 0 || dur > 0 || rej == 0) out += ev("access", dur)
+            if (rej > 0) out += ev("reject", 0)
+        }
+    }
+
     fun parse(text: String): List<AccessEvent> {
         val out = ArrayList<AccessEvent>()
         var uid = -1
         var pkg: String? = null
         var op: String? = null
         var source = "last"
+        var cols: Map<String, Int>? = null
         for (line in text.lineSequence()) {
-            val low = line.trim().lowercase()
+            // Android 16+/17: seksioni discrete eshte tabele "UID|PACKAGE_NAME|...|ACCESS_TIME|...".
+            // Dege shtese; formatet e vjetra me poshte mbeten te pandryshuara.
+            val t = line.trim()
+            if (t.startsWith("UID|PACKAGE_NAME|")) {
+                cols = t.split('|').withIndex().associate { it.value to it.index }
+                continue
+            }
+            val c = cols
+            if (c != null) {
+                if ('|' in t) { tableRow(t, c, out); continue }
+                if (t.isEmpty()) continue
+                cols = null
+            }
+            val low = t.lowercase()
             if (low.startsWith("discrete accesses") || low.startsWith("discrete ops") ||
                 low.startsWith("discrete registry")
             ) {
