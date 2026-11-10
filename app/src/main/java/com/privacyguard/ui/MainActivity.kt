@@ -172,6 +172,7 @@ private fun Home() {
 
         // ---------------- sot
         today?.let { d -> TodayCard(d, onLimit = ::limit, onNet = ::blockNet) }
+        today?.let { d -> FlowsCard(d) }
         today?.let { d -> TrackersCard(d, blockTick, onHost = ::blockHost) }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -447,6 +448,30 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
             val (pkg, op) = k.split('|', limit = 2)
             Text("${an.name(pkg)} · ${com.privacyguard.core.Ops.map[op]?.first ?: op}", fontSize = 13.sp, modifier = Modifier.weight(1f))
             TextButton(onClick = { onRestore(k) }) { Text("Rikthe", fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun FlowsCard(d: DayReport) {
+    if (d.flows.isEmpty()) return
+    val ctx = LocalContext.current
+    val an = remember { Analyzer(ctx).names }
+    val hm = remember { java.time.format.DateTimeFormatter.ofPattern("HH:mm") }
+    fun t(ts: Long) = java.time.Instant.ofEpochMilli(ts).atZone(java.time.ZoneId.systemDefault()).format(hm)
+    SectionCard {
+        Text("Kush çfarë mori dhe kujt ia çoi", fontWeight = FontWeight.SemiBold)
+        Text("Lidhja bëhet sipas kohës (brenda 10 min pas marrjes), jo sipas përmbajtjes.", fontSize = 11.sp)
+        for (f in d.flows.take(8)) {
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            Text(an.name(f.pkg), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            if (f.took.isNotEmpty()) Text("Mori: " + f.took.entries.joinToString { (k, n) ->
+                k + (if (n > 1) " ×$n" else "") + if (k in f.bgTook) " (background)" else "" }, fontSize = 12.sp)
+            Text("Ia çoi: " + f.to.entries.sortedByDescending { it.value.count }
+                .joinToString { (tr, u) -> "${tr.company} (${tr.category}) ×${u.count}" }, fontSize = 12.sp)
+            for (l in f.links) Text("• ${t(l.ts)} ${l.what} → ${l.company} pas ${fmtDur(l.afterMs)} (${l.host})",
+                fontSize = 12.sp, color = ORANGE)
+            if (f.blocked > 0) Text("U bllokuan ${f.blocked} kërkesa", fontSize = 12.sp, color = Color(0xFF2E7D32))
         }
     }
 }

@@ -142,4 +142,35 @@ object Trackers {
     }
 
     fun isFirstParty(t: T, pkg: String) = firstParty[t.category]?.any { pkg.startsWith(it) } == true
+
+    /**
+     * Domene qe sjellin PERMBAJTJE (foto, video, mesazhe). Shenohen ne raport, por nuk bllokohen
+     * kurre: bllokimi i tyre do te prishte Instagram-in/WhatsApp-in brenda app-eve te tjera.
+     */
+    private val content = setOf(
+        "facebook.com", "facebook.net", "fbcdn.net", "instagram.com", "cdninstagram.com",
+        "whatsapp.net", "whatsapp.com", "tiktok.com", "tiktokv.com", "byteoversea.com", "samsungrm.net",
+    )
+
+    /** Pika gjurmimi brenda atyre domeneve: SDK-te, pixel-at, reklamat. Keto bllokohen. */
+    private val trackingEndpoints = setOf(
+        "graph.facebook.com", "an.facebook.com", "connect.facebook.net", "pixel.facebook.com", "analytics.tiktok.com",
+    )
+
+    private fun suffixes(host: String): List<String> {
+        val p = host.lowercase().trimEnd('.').split('.')
+        return (0 until p.size - 1).map { p.subList(it, p.size).joinToString(".") }
+    }
+
+    /**
+     * A mund te bllokohet kjo kerkese pa prishur app-in? Jo kurre per vete pronarin
+     * (Instagram -> instagram.com) dhe jo per domenet e permbajtjes.
+     */
+    fun blockable(host: String, pkg: String): Boolean {
+        val t = classify(host) ?: return false
+        if (isFirstParty(t, pkg)) return false
+        val s = suffixes(host)
+        if (s.any { it in trackingEndpoints }) return true
+        return s.none { it in content }
+    }
 }

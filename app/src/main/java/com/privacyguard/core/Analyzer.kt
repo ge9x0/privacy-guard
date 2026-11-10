@@ -3,6 +3,7 @@ package com.privacyguard.core
 import android.content.Context
 import android.content.pm.PackageManager
 import com.privacyguard.data.AccessEvent
+import com.privacyguard.data.ConnRow
 import com.privacyguard.data.Db
 import com.privacyguard.data.ScreenRow
 import java.time.LocalDate
@@ -49,6 +50,7 @@ object Ops {
         "bg" to "Background", "cch" to "Background (fjetur)", "pers" to "Sistem", "unknown" to "E panjohur",
     )
     val background = setOf("bg", "cch", "cached")
+    val sensitive = setOf("personal", "loc", "mic", "cam", "clip", "media")
     val fgService = setOf("fgsvc", "fg", "fgs", "fgsvcl")
 
     /** App-e qe e perdorin mikrofonin/vendndodhjen ne background per arsye te njohura. */
@@ -115,6 +117,20 @@ data class NetUse(var txBg: Long = 0, var txFg: Long = 0, var rx: Long = 0, var 
 
 data class TrackerUse(val hosts: MutableSet<String> = mutableSetOf(), var count: Int = 0)
 
+/** "Mori X ne ora H dhe pas N min kontaktoi kompanine Y." Lidhje ne kohe, jo prove e permbajtjes. */
+data class Link(val what: String, val ts: Long, val company: String, val host: String, val afterMs: Long)
+
+/** Per nje app: cfare mori, kujt i dergoi (trackera te paleve te treta) dhe sa u bllokuan. */
+data class Flow(
+    val pkg: String,
+    val took: Map<String, Int>,          // emri i te dhenes -> sa here
+    val bgTook: Set<String>,             // te marra ne background / me ekran te fikur
+    val to: Map<Trackers.T, TrackerUse>,
+    val links: List<Link>,
+    val blocked: Int,
+    val txBg: Long,
+)
+
 data class DayReport(
     val day: LocalDate,
     val events: List<Ev>,
@@ -124,6 +140,7 @@ data class DayReport(
     val trackers: Map<String, Map<Trackers.T, TrackerUse>>,
     val screen: List<ScreenRow>,
     val hasConnData: Boolean,
+    val flows: List<Flow> = emptyList(),
 ) {
     private fun tot(g: String, f: (Ev) -> Long): Long = events.filter { it.group == g && it.e.kind == "access" }.sumOf(f)
     val micN get() = tot("mic") { 1 }.toInt()
@@ -240,7 +257,36 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
             val u = trk.getOrPut(pkg) { HashMap() }.getOrPut(t) { TrackerUse() }
             u.hosts += c.host; u.count++
         }
-        return DayReport(day, events, alerts, usage, net, trk, screen.filter { it.ts >= from }, conns.isNotEmpty())
+        val flows = flows(events, conns, trk, net)
+        return DayReport(day, events, alerts, usage, net, trk, screen.filter { it.ts >= from }, conns.isNotEmpty(), flows)
+    }
+
+    /** Lidh qasjet ne te dhena personale me trackerat qe i kontaktoi i njejti app brenda 10 minutash. */
+    private fun flows(
+        events: List<Ev>, conns: List<ConnRow>, trk: Map<String, Map<Trackers.T, TrackerUse>>, net: Map<String, NetUse>,
+    ): List<Flow> {
+        val window = 10 * 60_000L
+        val took = events.filter { it.e.kind == "access" && it.group in Ops.sensitive }.groupBy { it.e.pkg }
+        val pk = { c: ConnRow -> if (c.uid >= 0) names.pkgForUid(c.uid) else AppNames.UNKNOWN }
+        val tc = conns.mapNotNull { c ->
+            val t = Trackers.classify(c.host) ?: return@mapNotNull null
+            val p = pk(c)
+            if (Trackers.isFirstParty(t, p)) null else Triple(p, t, c)
+        }.groupBy { it.first }.mapValues { (_, v) -> v.sortedBy { it.third.ts } }
+        val blocked = conns.filter { it.blocked }.groupingBy(pk).eachCount()
+        return trk.keys.filter { it != AppNames.UNKNOWN }.map { app ->
+            val evs = took[app].orEmpty().sortedBy { it.e.ts }
+            val links = LinkedHashMap<Pair<String, String>, Link>()
+            for (ev in evs) {
+                val hit = tc[app]?.firstOrNull { it.third.ts >= ev.e.ts && it.third.ts - ev.e.ts <= window } ?: continue
+                links.putIfAbsent(ev.label to hit.second.company,
+                    Link(ev.label, ev.e.ts, hit.second.company, hit.third.host, hit.third.ts - ev.e.ts))
+            }
+            Flow(
+                app, evs.groupingBy { it.label }.eachCount(), evs.filter { it.bgOrOff }.map { it.label }.toSet(),
+                trk[app].orEmpty(), links.values.take(8), blocked[app] ?: 0, net[app]?.txBg ?: 0,
+            )
+        }.sortedWith(compareBy({ -it.links.size }, { -it.took.size }, { f -> -(f.to.keys.maxOfOrNull { Trackers.weight[it.category] ?: 1 } ?: 0) }))
     }
 }
 

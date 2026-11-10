@@ -380,6 +380,24 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
             d.hasConnData -> text("Asnjë lidhje me trackera të njohur këtë ditë.", 8.5f)
             else -> text("Ndize “Regjistro adresat (VPN lokale)” në app për të parë kujt i dërgon çdo app.", 8.5f)
         }
+
+        if (d.flows.isNotEmpty()) {
+            h2("Çfarë mori dhe kujt ia çoi")
+            table(listOf("App", "Mori", "Ia çoi", "Pas marrjes", "Bllokuar"),
+                d.flows.take(20).map { f ->
+                    listOf(
+                        Cell(names.name(f.pkg), bold = true),
+                        Cell(f.took.entries.joinToString { (k, n) -> k + (if (n > 1) " ×$n" else "") + if (k in f.bgTook) " (bg)" else "" }
+                            .ifEmpty { "–" }, if (f.bgTook.isNotEmpty()) Sev.HIGH.color else null),
+                        Cell(f.to.keys.joinToString { it.company }),
+                        Cell(f.links.joinToString("\n") { "${hm(it.ts)} ${it.what} → ${it.company} pas ${fmtDur(it.afterMs)}" }.ifEmpty { "–" },
+                            if (f.links.isNotEmpty()) Sev.CRIT.color else null, small = true),
+                        Cell(if (f.blocked > 0) "${f.blocked}" else "–"),
+                    )
+                }, listOf(.15f, .25f, .2f, .3f, .1f))
+            note("“Pas marrjes”: i njëjti app kontaktoi tracker-in brenda 10 minutave pasi lexoi të dhënën. " +
+                "Është lidhje në kohë, jo provë që pikërisht ajo e dhënë u dërgua; DNS-ja tregon kujt, jo çfarë.")
+        }
     }
 
     private fun method() {

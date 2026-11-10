@@ -52,10 +52,9 @@ object Blocker {
         val pk = pkgsOf(ctx, uid)
         val ap = apps(ctx)
         if (ap.isNotEmpty() && pk.any { it in ap }) return "app"
-        if (trackersOn(ctx) && uid >= 10000) {        // app-et e sistemit (uid < 10000) nuk preken
-            val t = Trackers.classify(h) ?: return null
-            if (pk.none { Trackers.isFirstParty(t, it) }) return "tracker"
-        }
+        // app-et e sistemit (uid < 10000) nuk preken; per uid te ndare, bllokohet vetem
+        // nese asnjeri nga app-et e tij nuk e ka domenin si te vetin
+        if (trackersOn(ctx) && uid >= 10000 && pk.isNotEmpty() && pk.all { Trackers.blockable(h, it) }) return "tracker"
         return null
     }
 
