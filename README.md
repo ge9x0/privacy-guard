@@ -73,6 +73,13 @@ work/Work.kt         mbledhja çdo 3 orë dhe raporti çdo natë
 ui/MainActivity.kt   ekrani i app-it
 ```
 
+## Bllokimi (hapi 5 në app)
+
+- **Blloko trackerat e palëve të treta**: përmes VPN-së lokale, kërkesat DNS drejt listës së trackerave/brokerëve marrin përgjigjen NXDOMAIN. Kur domeni i përket vetë pronarit të app-it (p.sh. Instagram → instagram.com), lejohet. App-et e sistemit (uid < 10000) nuk preken.
+- **Blloko internetin e app-it** / **Blloko domenin**: nga sinjalizimet dhe karta "Trackera sot".
+- **Lejo vetëm kur e përdor**: `appops set <app> <OP> foreground` për mikrofonin, kamerën, vendndodhjen, kontaktet etj. Kërkon Mënyrën B (Wireless debugging i lidhur); përndryshe app-i hap Settings dhe tregon komandën për kompjuterin. Mënyra e mëparshme ruhet dhe "Rikthe" e kthen.
+- Kufizime: Android-i i mban përgjigjet DNS në cache për pak minuta; app-et me DNS të enkriptuar (DoH) ose IP të shkruara në kod nuk bllokohen nga DNS.
+
 ## Kufizime
 
 - Tregon **kur** dhe **sa**, jo përmbajtjen e asaj që u dëgjua ose u dërgua.

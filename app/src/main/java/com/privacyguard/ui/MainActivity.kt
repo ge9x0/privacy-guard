@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.privacyguard.Prefs
 import com.privacyguard.adb.Pairing
+import com.privacyguard.block.Blocker
 import com.privacyguard.collect.Collector
 import com.privacyguard.collect.Mode
 import com.privacyguard.collect.Shell
@@ -104,6 +105,8 @@ private fun Home() {
     var usage by remember { mutableStateOf(Collector.hasUsageAccess(ctx)) }
     var monitor by remember { mutableStateOf(Prefs.monitor(ctx)) }
     var vpn by remember { mutableStateOf(DnsVpnService.isRunning) }
+    var manual by remember { mutableStateOf<Pair<String, Blocker.Result.Manual>?>(null) }
+    var blockTick by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refresh) {
         withContext(Dispatchers.IO) {
@@ -120,6 +123,22 @@ private fun Home() {
             busy = null; msg = r; refresh++
         }
     }
+    fun limit(pkg: String, op: String) = work("Po kufizoj lejen") {
+        when (val r = Blocker.limit(ctx, pkg, op)) {
+            is Blocker.Result.Manual -> { manual = pkg to r; null }
+            is Blocker.Result.Done -> { blockTick++; r.msg }
+        }
+    }
+    fun blockNet(pkg: String) {
+        Blocker.setApp(ctx, pkg, true); blockTick++
+        msg = if (vpn) "Interneti i app-it u bllokua (DNS). Mund të duhen disa minuta që të kalojë cache-i."
+        else "U shënua. Bllokimi punon vetëm kur VPN-ja lokale (hapi 4) është ndezur."
+    }
+    fun blockHost(h: String) {
+        Blocker.setHost(ctx, h, true); blockTick++
+        msg = "$h u bllokua" + if (vpn) "." else " (ndiz VPN-në lokale që të ketë efekt)."
+    }
+
 
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val vpnLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
@@ -149,9 +168,11 @@ private fun Home() {
 
         busy?.let { Text("$it…", color = MaterialTheme.colorScheme.primary) }
         msg?.let { Text(it, fontSize = 13.sp) }
+        manual?.let { (pkg, r) -> ManualCard(pkg, r) { manual = null } }
 
         // ---------------- sot
-        today?.let { d -> TodayCard(d) }
+        today?.let { d -> TodayCard(d, onLimit = ::limit, onNet = ::blockNet) }
+        today?.let { d -> TrackersCard(d, blockTick, onHost = ::blockHost) }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = {
@@ -244,6 +265,15 @@ private fun Home() {
                 Spacer(Modifier.width(8.dp)); Text(if (vpn) "Ndezur" else "Fikur")
             }
         }
+        // ---------------- 5. bllokimi
+        BlockSection(vpn, blockTick, onChange = { blockTick++ }, onRestore = { key ->
+            work("Po rikthej") {
+                when (val r = Blocker.restore(ctx, key)) {
+                    is Blocker.Result.Manual -> { manual = key.substringBefore('|') to r; null }
+                    is Blocker.Result.Done -> { blockTick++; r.msg }
+                }
+            }
+        })
         Text("Raporti krijohet vetë çdo natë në 23:50 dhe ruhet te Download/PrivacyGuard.", fontSize = 12.sp)
         Spacer(Modifier.height(24.dp))
     }
@@ -291,7 +321,7 @@ private fun ManualPair(onPair: (Int, String) -> Unit) {
 }
 
 @Composable
-private fun TodayCard(d: DayReport) {
+private fun TodayCard(d: DayReport, onLimit: (String, String) -> Unit, onNet: (String) -> Unit) {
     SectionCard {
         Text("Sot", fontWeight = FontWeight.SemiBold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -313,6 +343,7 @@ private fun TodayCard(d: DayReport) {
                 Column {
                     Text("${an.name(pkg)} · $label" + if (list.size > 1) " ×${list.size}" else "", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Text(list.first().why + if (list.sumOf { it.e.durationMs } > 0) " (${fmtDur(list.sumOf { it.e.durationMs })})" else "", fontSize = 12.sp)
+                    BlockMenu(label, onLimit = { onLimit(pkg, list.first().e.op) }, onNet = { onNet(pkg) })
                 }
             }
         }
@@ -327,3 +358,95 @@ private fun Kpi(v: String, l: String, c: Color?) {
     }
 }
 
+
+@Composable
+private fun BlockMenu(label: String, onLimit: () -> Unit, onNet: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    if (!open) { TextButton(onClick = { open = true }) { Text("Blloko…", fontSize = 12.sp) }; return }
+    Column {
+        TextButton(onClick = { open = false; onLimit() }) { Text("$label: lejo vetëm kur e përdor", fontSize = 12.sp) }
+        TextButton(onClick = { open = false; onNet() }) { Text("Blloko internetin e këtij app-i", fontSize = 12.sp) }
+        TextButton(onClick = { open = false }) { Text("Anulo", fontSize = 12.sp) }
+    }
+}
+
+@Composable
+private fun ManualCard(pkg: String, r: Blocker.Result.Manual, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    SectionCard {
+        Text("Bëje vetë", fontWeight = FontWeight.SemiBold)
+        Text(r.msg, fontSize = 13.sp)
+        SelectionContainer {
+            Text(r.commands.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp)).padding(8.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { Blocker.openAppSettings(ctx, pkg) }) { Text("Hap Settings") }
+            OutlinedButton(onClick = {
+                ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("cmd", r.commands.joinToString("\n")))
+            }) { Text("Kopjo") }
+            TextButton(onClick = onClose) { Text("Mbyll") }
+        }
+    }
+}
+
+@Composable
+private fun TrackersCard(d: DayReport, tick: Int, onHost: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val blocked = remember(tick) { Blocker.hosts(ctx) }
+    // host -> (kompania, app-et)
+    val hosts = d.trackers.flatMap { (pkg, m) -> m.flatMap { (t, u) -> u.hosts.map { Triple(it, t.company, pkg) } } }
+        .groupBy { it.first }.entries.sortedByDescending { it.value.size }.take(10)
+    if (hosts.isEmpty()) return
+    val an = remember { Analyzer(ctx).names }
+    SectionCard {
+        Text("Trackera sot", fontWeight = FontWeight.SemiBold)
+        for ((h, l) in hosts) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(h, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${l.first().second} · " + l.map { an.name(it.third) }.distinct().take(3).joinToString(), fontSize = 12.sp)
+                }
+                if (h in blocked) Text("Bllokuar", fontSize = 12.sp, color = RED)
+                else TextButton(onClick = { onHost(h) }) { Text("Blloko", fontSize = 12.sp) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestore: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val trackers = remember(tick) { Blocker.trackersOn(ctx) }
+    val apps = remember(tick) { Blocker.apps(ctx).sorted() }
+    val hosts = remember(tick) { Blocker.hosts(ctx).sorted() }
+    val ops = remember(tick) { Blocker.limited(ctx) }
+    val an = remember { Analyzer(ctx).names }
+    Step("5. Bllokimi", trackers || apps.isNotEmpty() || hosts.isNotEmpty() || ops.isNotEmpty(),
+        "Ndal trackerat dhe app-et që sillen keq. Bllokimi i rrjetit punon përmes VPN-së lokale" +
+            (if (vpn) "." else " – ndize te hapi 4.") +
+            " Kufizimi i lejeve (\"lejo vetëm kur e përdor\") kërkon Wireless debugging; përndryshe hapet Settings.") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = trackers, onCheckedChange = { Blocker.setTrackers(ctx, it); onChange() })
+            Spacer(Modifier.width(8.dp))
+            Text("Blloko trackerat e palëve të treta", fontSize = 13.sp)
+        }
+        Text("P.sh. Facebook SDK te një app tjetër bllokohet, por Instagram-i te vetë Instagram-i jo. App-et e sistemit nuk preken.", fontSize = 12.sp)
+        if (apps.isNotEmpty()) Text("App-e pa internet", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        for (a in apps) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(an.name(a), fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { Blocker.setApp(ctx, a, false); onChange() }) { Text("Hiq", fontSize = 12.sp) }
+        }
+        if (hosts.isNotEmpty()) Text("Domene të bllokuara", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        for (h in hosts) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(h, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { Blocker.setHost(ctx, h, false); onChange() }) { Text("Hiq", fontSize = 12.sp) }
+        }
+        if (ops.isNotEmpty()) Text("Leje të kufizuara", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        for ((k, prev) in ops) Row(verticalAlignment = Alignment.CenterVertically) {
+            val (pkg, op) = k.split('|', limit = 2)
+            Text("${an.name(pkg)} · ${com.privacyguard.core.Ops.map[op]?.first ?: op}", fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onRestore(k) }) { Text("Rikthe", fontSize = 12.sp) }
+        }
+    }
+}

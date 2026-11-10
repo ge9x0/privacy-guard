@@ -3,10 +3,14 @@ package com.privacyguard.vpn
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
 import android.util.Log
+import com.privacyguard.block.Blocker
 import com.privacyguard.data.ConnRow
 import com.privacyguard.data.Db
 import java.io.FileInputStream
@@ -28,7 +32,11 @@ import kotlin.concurrent.thread
 class DnsVpnService : VpnService() {
     private var iface: ParcelFileDescriptor? = null
     @Volatile private var running = false
-    private val pool = Executors.newFixedThreadPool(4)
+    // 16, jo 4: nje kerkese qe s'merr pergjigje e ze thread-in 5 s; me 4 radha mbushej dhe
+    // app-et hiqnin dore para se t'u vinte radha.
+    private val pool = Executors.newFixedThreadPool(16)
+    @Volatile private var up: InetAddress = InetAddress.getByName("1.1.1.1")
+    private var netCb: ConnectivityManager.NetworkCallback? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -38,15 +46,31 @@ class DnsVpnService : VpnService() {
         return START_STICKY
     }
 
-    private fun upstream(): InetAddress {
+    private fun upstream(lp: LinkProperties? = null): InetAddress {
         val cm = getSystemService(ConnectivityManager::class.java)
-        return cm.activeNetwork?.let { cm.getLinkProperties(it) }?.dnsServers
+        val l = lp ?: cm.activeNetwork?.let { cm.getLinkProperties(it) }
+        return l?.dnsServers
             ?.firstOrNull { it is Inet4Address && it.hostAddress != FAKE_DNS }
             ?: InetAddress.getByName("1.1.1.1")
     }
 
+    /** Serveri DNS ndiqet kur ndryshon rrjeti (WiFi <-> celular); me pare mbetej ai i fillimit. */
+    private fun watchUpstream(cm: ConnectivityManager) {
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
+                // vetem rrjete te verteta (jo VPN-ja jone) dhe vetem nese kane DNS IPv4; perndryshe
+                // mbajme serverin aktual, ne vend qe te biem te 1.1.1.1
+                if (cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != false) return
+                val n = lp.dnsServers.firstOrNull { it is Inet4Address && it.hostAddress != FAKE_DNS } ?: return
+                if (n != up) { Log.i(TAG, "upstream ${up.hostAddress} -> ${n.hostAddress}"); up = n }
+            }
+        }
+        // app-i yne eshte jashte VPN-se, keshtu qe rrjeti "default" eshte ai i vertete
+        runCatching { cm.registerDefaultNetworkCallback(cb); netCb = cb }.onFailure { Log.w(TAG, "netcb", it) }
+    }
+
     private fun startVpn() {
-        val up = upstream()
+        up = upstream()
         val pfd = Builder()
             .setSession("Privacy Guard DNS")
             .addAddress("10.111.222.2", 32)
@@ -62,6 +86,7 @@ class DnsVpnService : VpnService() {
         val output = FileOutputStream(pfd.fileDescriptor)
         val db = Db.get(this)
         val cm = getSystemService(ConnectivityManager::class.java)
+        watchUpstream(cm)
         thread(name = "pg-dns") {
             val buf = ByteArray(32767)
             while (running) {
@@ -69,16 +94,24 @@ class DnsVpnService : VpnService() {
                 if (n <= 0) continue
                 val q = Packets.parseDnsQuery(buf, n) ?: continue
                 val pkt = buf.copyOf(n)
+                // uid-i merret MENJEHERE, sa socket-i i app-it eshte ende hapur; me pare merrej
+                // brenda radhes dhe, kur radha vonohej, Android-i kthente -1 (app i panjohur).
+                val uid = runCatching {
+                    cm.getConnectionOwnerUid(
+                        OsConstants.IPPROTO_UDP,
+                        InetSocketAddress(InetAddress.getByAddress(q.src), q.srcPort),
+                        InetSocketAddress(InetAddress.getByAddress(q.dst), q.dstPort),
+                    )
+                }.getOrDefault(-1)
+                val ts = System.currentTimeMillis()
                 pool.execute {
-                    val uid = runCatching {
-                        cm.getConnectionOwnerUid(
-                            OsConstants.IPPROTO_UDP,
-                            InetSocketAddress(InetAddress.getByAddress(q.src), q.srcPort),
-                            InetSocketAddress(InetAddress.getByAddress(q.dst), q.dstPort),
-                        )
-                    }.getOrDefault(-1)
-                    runCatching { db.addConn(ConnRow(System.currentTimeMillis(), uid, q.name, q.payloadLen.toLong())) }
-                    forward(pkt, q, up, output)
+                    val why = runCatching { Blocker.dnsVerdict(this, uid, q.name) }.getOrNull()
+                    val nx = if (why != null) Packets.nxdomain(pkt, q) else null
+                    runCatching { db.addConn(ConnRow(ts, uid, q.name, q.payloadLen.toLong(), blocked = nx != null)) }
+                    if (nx != null) {
+                        Log.d(TAG, "bllokuar ($why) uid=$uid ${q.name}")
+                        runCatching { synchronized(output) { output.write(Packets.buildUdpReply(q, nx, nx.size)) } }
+                    } else forward(pkt, q, up, output)
                 }
             }
         }
@@ -102,6 +135,8 @@ class DnsVpnService : VpnService() {
     }
 
     private fun stopVpn() {
+        netCb?.let { cb -> runCatching { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(cb) } }
+        netCb = null
         running = false
         isRunning = false
         runCatching { iface?.close() }
@@ -155,6 +190,30 @@ object Packets {
         }
         if (sb.isEmpty()) return null
         return DnsQuery(b.copyOfRange(12, 16), b.copyOfRange(16, 20), sport, dport, off, len, sb.toString().lowercase())
+    }
+
+    /**
+     * Pergjigje NXDOMAIN ("ky server s'ekziston") per nje kerkese te bllokuar: koka + pyetja,
+     * pa seksione te tjera. null nese pyetja s'mund te lexohet (atehere kerkesa kalon normalisht).
+     */
+    fun nxdomain(b: ByteArray, q: DnsQuery): ByteArray? {
+        val off = q.payloadOffset
+        val end = off + q.payloadLen
+        var i = off + 12
+        while (i < end) {
+            val l = b[i].toInt() and 0xFF
+            if (l == 0) break
+            if (l >= 64) return null
+            i += l + 1
+        }
+        val qEnd = i + 1 + 4                       // 0-ja fundore + QTYPE + QCLASS
+        if (i >= end || qEnd > end) return null
+        val r = b.copyOfRange(off, qEnd)
+        r[2] = ((r[2].toInt() and 0x79) or 0x80).toByte()   // QR=1, mban OPCODE dhe RD
+        r[3] = 0x83.toByte()                                // RA=1, RCODE=3 (NXDOMAIN)
+        r[4] = 0; r[5] = 1                                  // QDCOUNT=1
+        for (k in 6 until 12) r[k] = 0                      // AN/NS/AR = 0
+        return r
     }
 
     fun buildUdpReply(q: DnsQuery, payload: ByteArray, plen: Int): ByteArray {
