@@ -53,6 +53,41 @@ object Ops {
     val sensitive = setOf("personal", "loc", "mic", "cam", "clip", "media")
     val fgService = setOf("fgsvc", "fg", "fgs", "fgsvcl")
 
+    /** Mesazheri/thirrje: sinkronizojne kontaktet ne background qe te gjejne personat qe njeh. */
+    val contactSync = listOf(
+        "com.whatsapp", "org.telegram.", "org.thoughtcrime.securesms", "com.viber.voip", "com.facebook.orca",
+        "com.google.android.apps.tachyon", "com.skype.", "com.microsoft.teams", "jp.naver.line.", "com.discord",
+    )
+    /** App-i i prodhuesit qe e ka vete kete te dhene (kalendari lexon kalendarin, telefoni regjistrin e thirrjeve). */
+    private val vendors = listOf("com.samsung.", "com.sec.", "com.google.android.", "com.android.")
+    private val owners = mapOf(
+        "READ_CALENDAR" to listOf("calendar"), "READ_CONTACTS" to listOf("contacts", "dialer", "phone", "messaging"),
+        "READ_CALL_LOG" to listOf("dialer", "phone", "contacts"), "READ_SMS" to listOf("messaging", "sms", "mms"),
+    )
+    fun ownsData(op: String, pkg: String) =
+        vendors.any { pkg.startsWith(it) } && owners[op].orEmpty().any { it in pkg.substringAfter('.') }
+
+    private val contactOps = setOf("READ_CONTACTS", "READ_CALL_LOG", "READ_PHONE_NUMBERS", "GET_ACCOUNTS")
+
+    /**
+     * Ul sinjalizimet per app-et qe e kane te natyrshme: app-et e sistemit (Kontaktet, Telefoni,
+     * Mesazhet, Kalendari, Cloud...) lexojne te dhenat e veta, mesazherite sinkronizojne kontaktet.
+     * Mikrofoni/kamera e sistemit nuk fshihen, vetem ulen nje nivel.
+     */
+    fun refine(sev: Sev, why: String, group: String, op: String, pkg: String, system: Boolean): Pair<Sev, String> {
+        if (sev == Sev.INFO) return sev to why
+        val known = knownSystem[pkg]
+        return when {
+            known != null -> (if (sev == Sev.MED) Sev.INFO else Sev.MED) to "$why ($known - usually normal.)"
+            system && (group == "mic" || group == "cam") ->
+                (if (sev == Sev.CRIT) Sev.MED else Sev.INFO) to "$why (Pre-installed system app.)"
+            system || ownsData(op, pkg) -> Sev.INFO to "$why (Pre-installed system app; this is its own data or a system feature.)"
+            op in contactOps && contactSync.any { pkg.startsWith(it) } ->
+                Sev.MED to "Contact sync in the background. Normal for messaging apps, but your contacts are uploaded to their servers."
+            else -> sev to why
+        }
+    }
+
     /** App-e qe e perdorin mikrofonin/vendndodhjen ne background per arsye te njohura. */
     val knownSystem = mapOf(
         "com.google.android.googlequicksearchbox" to "Google Assistant ('Hey Google')",
@@ -201,12 +236,16 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
             "media" -> if (bg || off) { sev = Sev.MED; why = "Photos/files were read in the background." }
             "call" -> { sev = Sev.INFO; why = "Part of a phone call." }
         }
-        val known = Ops.knownSystem[e.pkg]
-        if (known != null && sev != Sev.INFO) {
-            sev = if (sev == Sev.MED) Sev.INFO else Sev.MED
-            why += " ($known - usually normal.)"
-        }
-        return sev to why
+        return Ops.refine(sev, why, group, e.op, e.pkg, e.uid in 0 until 10000 || isSystem(e.pkg))
+    }
+
+    private val systemCache = HashMap<String, Boolean>()
+    /** I instaluar nga prodhuesi (Samsung/Google/Android), edhe nese eshte perditesuar. */
+    private fun isSystem(pkg: String): Boolean = systemCache.getOrPut(pkg) {
+        runCatching {
+            val f = ctx.packageManager.getApplicationInfo(pkg, 0).flags
+            f and (android.content.pm.ApplicationInfo.FLAG_SYSTEM or android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+        }.getOrDefault(false)
     }
 
     fun build(day: LocalDate): DayReport {
