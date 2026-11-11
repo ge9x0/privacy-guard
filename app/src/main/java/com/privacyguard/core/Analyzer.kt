@@ -59,7 +59,8 @@ object Ops {
         "com.google.android.apps.tachyon", "com.skype.", "com.microsoft.teams", "jp.naver.line.", "com.discord",
     )
     /** App-i i prodhuesit qe e ka vete kete te dhene (kalendari lexon kalendarin, telefoni regjistrin e thirrjeve). */
-    private val vendors = listOf("com.samsung.", "com.sec.", "com.google.android.", "com.android.")
+    private val vendors = listOf("com.samsung.", "com.sec.", "com.google.android.", "com.android.", "com.miui.", "com.xiaomi.",
+        "com.huawei.", "com.hihonor.", "com.oplus.", "com.coloros.", "com.oneplus.", "com.motorola.", "com.sonymobile.", "com.nothing.", "com.transsion.")
     private val owners = mapOf(
         "READ_CALENDAR" to listOf("calendar"), "READ_CONTACTS" to listOf("contacts", "dialer", "phone", "messaging"),
         "READ_CALL_LOG" to listOf("dialer", "phone", "contacts"), "READ_SMS" to listOf("messaging", "sms", "mms"),
@@ -115,8 +116,14 @@ object Ops {
 
 /** Emrat e app-eve nga vete telefoni. */
 class AppNames(private val ctx: Context) {
-    private val cache = HashMap<String, String>()
-    private val uidCache = HashMap<Int, String>()
+    // Te perbashketa per gjithe app-in: emrat lexohen nga sistemi nje here, jo ne cdo karte/tab.
+    private val cache get() = sharedNames
+    private val uidCache get() = sharedUids
+    companion object {
+        const val UNKNOWN = "?"
+        private val sharedNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+        private val sharedUids = java.util.concurrent.ConcurrentHashMap<Int, String>()
+    }
 
     fun name(pkg: String): String = cache.getOrPut(pkg) {
         if (pkg == UNKNOWN) return@getOrPut "Unknown app"
@@ -133,7 +140,6 @@ class AppNames(private val ctx: Context) {
         }
     }
 
-    companion object { const val UNKNOWN = "?" }
 }
 
 data class Ev(

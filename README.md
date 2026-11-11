@@ -1,98 +1,85 @@
-# Privacy Guard – app për Android
+# Privacy Guard
 
-App-i që punon vetë në telefon dhe çdo natë krijon raportin PDF: çfarë u përdor (mikrofon, kamera, vendndodhje, kontakte, clipboard…), çfarë u dërgua, kujt iu dërgua, dhe çfarë ndodhi me ekran të fikur.
+An Android app that shows what your apps really do: who used the microphone, camera, location, contacts or clipboard, when it happened (on screen, in the background, with the screen off), which servers each app contacted, and which trackers are built into them. It can also block trackers and ads, cut an app's internet, remove pre-installed bloatware and take apart an app's package to see what is inside.
 
-## Tri mënyrat (app-i zgjedh vetë më të mirën)
+Everything runs on the phone. No account, no cloud, no analytics. The only network requests the app makes are the optional block-list downloads (from jsDelivr, with GitHub as a fallback).
 
-| Mënyra | Si aktivizohet | Çfarë sheh | Pas restartimit |
-|---|---|---|---|
-| **A – Leje e përhershme** | Një herë: `adb shell pm grant com.privacyguard android.permission.DUMP` (nga kompjuteri), **ose** vetë app-i me Mënyrën B | Historikun e plotë: kush, kur, sa gjatë, në ekran apo background | Mbetet |
-| **B – Wireless debugging** | Në app: *Fillo* → Wireless debugging → Pair with code → kodi te njoftimi | Njësoj si A | Duhet *Rilidhu* (Wireless debugging fiket) |
-| **C – E kufizuar** | Asgjë | Kur u ndez mikrofoni/kamera dhe nëse ekrani ishte i fikur, por jo gjithmonë app-in | – |
+**Requirements:** Android 11 or newer. Tested on a Samsung Galaxy A35 (Android 17) and on clean Android 11 and Android 14 emulators.
 
-Pasi lidhet me Mënyrën B, app-i provon automatikisht t'i japë vetes lejen e Mënyrës A. Nëse Samsung-u e pranon, Wireless debugging nuk duhet më kurrë.
+## Features
 
-Pjesët që punojnë në çdo mënyrë:
-- **Sa dërgoi çdo app** (background / plan i parë / data celulare), me lejen *Usage access*
-- **Kujt i dërgoi**: VPN lokale që kalon vetëm DNS dhe tregon cili app kërkoi cilin server, krahasuar me listën e brokerëve dhe trackerave
-- **Njoftim i menjëhershëm** kur mikrofoni/kamera ndizet me ekran të fikur (thirrjet përjashtohen)
-- **PDF çdo natë në 23:50** te `Download/PrivacyGuard`, plus butona për PDF-në e sotme dhe të 7 ditëve
+| Tab | What it does |
+|---|---|
+| **Today** | Alerts (sensitive access in the background or with the screen off), data access followed by a tracker, trackers contacted today, daily and 7-day PDF reports, setup |
+| **Activity** | Every access by every app, grouped by category; DNS log of every server each app asked for, with tracker / block-list / keyword flags |
+| **Apps** | Privacy score per app, tracker SDKs inside each app (deep scan of the code), permission advisor, **Inspect an app** (manifest decoder, servers and keys written in the code, read-only code viewer), **Debloater** |
+| **Blocking** | Block lists (HaGeZi), firewall, internet only while on screen, blocked apps/domains, limited permissions |
 
-## Ndërtimi i APK-së
+Also: instant notification when the mic or camera turns on with the screen off, clipboard read alerts, a new-app alert with a tracker scan, a weekly privacy score, and a PDF report every night at 23:50 in `Download/PrivacyGuard`.
 
-Kodi **nuk është kompiluar ende**: u shkrua në një mjedis pa qasje te Android SDK. Logjika e leximit të `dumpsys` u testua dhe jep të njëjtat rezultate si scripti Python. Gabimet e vogla të kompilimit pritet të dalin në ndërtimin e parë.
+## Access levels
 
-**Me Claude Code në Fedora (më e lehta):**
+Android only lets ordinary apps see a little. Privacy Guard picks the best level it has:
+
+| Level | How to get it | What you get |
+|---|---|---|
+| **Full access (permanent)** | Once, from a computer: the commands under *Today → Setup → step 2, option A*. Or option B below; the app then tries to grant itself permanent access. | Full history: who, when, for how long, on screen or not. Survives restarts. |
+| **Full access (Wireless debugging)** | *Today → Setup → step 2 → Start*, then pair with the code from *Developer options → Wireless debugging*. No computer needed. | The same, plus actions that need a shell: removing permissions, debloating, the firewall. Tap *Reconnect* after a restart. |
+| **Limited** | Nothing | When the mic/camera turned on and whether the screen was off, but not always which app. |
+
+Some manufacturers block permanent access; Wireless debugging then works instead.
+
+## Setup on the phone
+
+1. **Usage access**: allow Privacy Guard.
+2. **Full access**: option A or B above.
+3. **Continuous monitoring**: on (a small permanent notification).
+4. **Local VPN**: on, to see and block where apps connect. It only handles DNS; your traffic does not go through it. Private DNS should be *Off* or *Automatic*.
+5. Allow unrestricted battery use for Privacy Guard, so the system does not stop it at night (on Xiaomi, Huawei, Oppo and similar phones also allow autostart).
+
+## Building
+
 ```bash
-cd PrivacyGuardApp
-claude
-```
-dhe thuaj: *"Instalo Android SDK (command-line tools, platform 35, build-tools), ndërto me ./gradlew assembleDebug dhe rregullo gabimet e kompilimit. Mos ndrysho logjikën."*
-
-**Me GitHub Actions:** ngarkoje dosjen në një repo. Workflow-i `.github/workflows/build.yml` e ndërton vetë dhe APK-ja del te *Actions → Artifacts*.
-
-**Me Android Studio:** *Open* → dosja → *Run*.
-
-Gjërat që ka më shumë gjasa të duan rregullim:
-- `libadb-android` 3.1.1 merret nga JitPack (`com.github.MuntashirAkon`), jo nga Maven Central; API-ja përputhet me kodin
-- importet e Compose te `ui/MainActivity.kt`
-
-## Testi i Mënyrës A (kur të kesh kompjuterin afër, edhe pa USB)
-
-Në telefon: *Developer options → Wireless debugging → Pair device with pairing code*. Në Fedora:
-```bash
-adb pair IP:PORTA_E_PAIRING      # shkruaj kodin
-adb connect IP:PORTA             # porta nga ekrani kryesor i Wireless debugging
-adb install app-debug.apk
-adb shell pm grant com.privacyguard android.permission.DUMP
-adb shell pm grant com.privacyguard android.permission.PACKAGE_USAGE_STATS   # Android 17: pa këtë dumpsys appops refuzohet
-```
-Hape app-in: te *Mënyra e punës* duhet të shkruajë **"E plotë (leje e përhershme)"**. Nëse shkruan "E kufizuar", Samsung-u e bllokon `dumpsys` nga app-et. Atëherë përdoret Mënyra B dhe s'ka nevojë për ndryshime.
-
-## Konfigurimi në telefon (një herë)
-
-1. **Usage access** → Privacy Guard → lejo
-2. **Mënyra e plotë**: A ose B (shih më lart)
-3. **Monitorimi** ndezur: është njoftimi i përhershëm i vogël
-4. **VPN lokale** ndezur, nëse do të shohësh kujt i dërgojnë. Për rezultate më të mira: *Settings → Connections → More connection settings → Private DNS → Off*
-5. Samsung: *Settings → Apps → Privacy Guard → Battery → Unrestricted*, që One UI të mos e ndalë natën
-
-## Struktura
-
-```
-core/Parsers.kt      lexon dumpsys appops / audio / camera (i njëjti logjikë si scripti)
-core/Analyzer.kt     rregullat e sinjalizimeve, përmbledhja ditore
-core/Trackers.kt     lista e brokerëve dhe trackerave
-collect/Shell.kt     mënyrat A/B/C dhe vetë-dhënia e lejeve
-collect/Collector.kt mbledhja: historiku + statistikat e rrjetit
-adb/                 lidhja ADB me vetveten dhe çiftimi me njoftim
-monitor/             shërbimi: ekrani, mikrofoni, kamera, njoftimet e menjëhershme
-vpn/                 VPN-ja lokale vetëm për DNS
-report/PdfReport.kt  PDF-ja
-work/Work.kt         mbledhja çdo 3 orë dhe raporti çdo natë
-ui/MainActivity.kt   ekrani i app-it
+git clone <this repo> && cd PrivacyGuardApp
+./gradlew assembleDebug            # app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest        # unit tests
+./gradlew connectedDebugAndroidTest   # taps every button on every tab (use an emulator: it presses Remove/Block too)
 ```
 
-## Bllokimi (hapi 5 në app)
+JDK 17+ and the Android SDK (platform 35) are needed. GitHub Actions (`.github/workflows/build.yml`) builds the APK, runs the unit tests and lint on every push; the APK is under *Actions → Artifacts*.
 
-- **Blloko trackerat e palëve të treta**: përmes VPN-së lokale, kërkesat DNS drejt listës së trackerave/brokerëve marrin përgjigjen NXDOMAIN. Kur domeni i përket vetë pronarit të app-it (p.sh. Instagram → instagram.com), lejohet. App-et e sistemit (uid < 10000) nuk preken.
-- **Blloko internetin e app-it** / **Blloko domenin**: nga sinjalizimet dhe karta "Trackera sot".
-- **Lejo vetëm kur e përdor**: `appops set <app> <OP> foreground` për mikrofonin, kamerën, vendndodhjen, kontaktet etj. Kërkon Mënyrën B (Wireless debugging i lidhur); përndryshe app-i hap Settings dhe tregon komandën për kompjuterin. Mënyra e mëparshme ruhet dhe "Rikthe" e kthen.
-- Kufizime: Android-i i mban përgjigjet DNS në cache për pak minuta; app-et me DNS të enkriptuar (DoH) ose IP të shkruara në kod nuk bllokohen nga DNS.
+## How it works
 
-## Kufizime
+```
+collect/   Shell access levels, the collector (appops history + network usage)
+core/      parsers for dumpsys output, alert rules, tracker list
+monitor/   foreground service: screen, mic, camera, clipboard, instant alerts
+vpn/       local DNS-only VPN: logging, blocking, catching apps that bypass the phone's DNS
+block/     blocking rules, block lists, firewall, foreground-app detection
+apps/      privacy score, SDK scanner (manifest + DEX), permission advisor, debloater
+inspect/   binary XML (AndroidManifest / resources.arsc) parser, servers and keys finder
+report/    PDF report
+ui/        Compose screens, code viewer
+```
 
-- Tregon **kur** dhe **sa**, jo përmbajtjen e asaj që u dëgjua ose u dërgua.
-- Një app që do ta anashkalonte vetë regjistrin e Android-it nuk do të dukej.
-- App-et me DNS të vetin të enkriptuar (DoH) nuk duken te "Kujt iu dërgua".
-- Sinjalizimi do të thotë "kontrolloje", jo provë automatike përgjimi.
+- **Blocking** happens at DNS level through the local VPN: blocked names get NXDOMAIN. An app's own servers (Instagram → instagram.com) are never blocked by a list. System apps are not touched.
+- **Firewall** uses Android's own per-app network switch (`cmd connectivity`), which also stops hardcoded IPs and the app's own encrypted DNS. It needs Wireless debugging and is applied again after a restart on the next Reconnect.
+- **Debloater** runs `pm uninstall -k --user 0`: the app is removed for your user only and stays in the system image, so *Restore* (`cmd package install-existing`) brings it back. Only system apps are offered; risky ones are hidden behind *Advanced*.
 
-## Licenca dhe kreditet
+## Limitations
 
-Privacy Guard është softuer i lirë nën **GPL-3.0-or-later** (shih `LICENSE`). Kushdo që merr APK-në ka të drejtë të marrë edhe kodin burimor.
+- It shows **when** and **how much**, never the content of what was heard or sent.
+- "Data access followed by a tracker" is a match in time, not proof that the data was sent.
+- An app that sidesteps Android's own access records would not appear.
+- Without the VPN, the app cannot tell which servers an app contacted.
+- An alert means "worth a look", not automatic proof of spying.
 
-- **Nënshkrimet e trackerave** (`app/src/main/res/values/am_trackers.xml`, 989 rreshta) janë kopjuar pa ndryshim nga [App Manager](https://github.com/MuntashirAkon/AppManager) i Muntashir Al-Islam (GPL-3.0-or-later, commit `dc4154f`), që bazohet te databaza e [Exodus Privacy](https://exodus-privacy.eu.org).
-- **libadb-android** nga i njëjti autor (dependency nga JitPack).
-- **Listat e bllokimit** shkarkohen nga [HaGeZi DNS blocklists](https://github.com/hagezi/dns-blocklists) në telefon; nuk përfshihen në kod.
-- **Lista e debloater-it** (`app/src/main/assets/debloat/*.json`) është kopjuar e pandryshuar nga [android-debloat-list](https://github.com/MuntashirAkon/android-debloat-list) (commit 10c8249), © Muntashir Al-Islam dhe kontribuesit, nën **AGPL-3.0** (shih `assets/debloat/COPYING` dhe `NOTICE.txt`). AGPL-3.0 është e pajtueshme me GPL-3.0 (neni 13).
-- Skaneri DEX, firewall-i dhe kapja e DNS-ve që anashkalojnë telefonin janë shkruar për këtë projekt (ide nga App Manager, pa kod të kopjuar).
+## License and credits
+
+Privacy Guard is free software under **GPL-3.0-or-later** (see `LICENSE`).
+
+- **Tracker signatures** (`app/src/main/res/values/am_trackers.xml`) are copied unchanged from [App Manager](https://github.com/MuntashirAkon/AppManager) by Muntashir Al-Islam (GPL-3.0-or-later, commit `dc4154f`), which is based on the [Exodus Privacy](https://exodus-privacy.eu.org) database.
+- **libadb-android** by the same author (JitPack dependency).
+- **Block lists** are downloaded on the phone from [HaGeZi DNS blocklists](https://github.com/hagezi/dns-blocklists); they are not part of this repository.
+- **Debloat list** (`app/src/main/assets/debloat/*.json`) is copied unchanged from [android-debloat-list](https://github.com/MuntashirAkon/android-debloat-list) (commit `10c8249`), © Muntashir Al-Islam and contributors, under **AGPL-3.0** (see `assets/debloat/COPYING` and `NOTICE.txt`). AGPL-3.0 is compatible with GPL-3.0 (section 13).
+- The DEX scanner, binary XML parser, firewall and DNS bypass catcher were written for this project (ideas from App Manager, no copied code).

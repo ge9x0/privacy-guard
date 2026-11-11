@@ -10,6 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.privacyguard"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 30          // Android 11: Wireless debugging + getConnectionOwnerUid
         targetSdk = 35
         versionCode = 1
@@ -18,7 +19,10 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: kodi i optimizuar e ben nderfaqen Compose disa here me te shpejte se build-i debug
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Per instalim personal: nenshkruhet me celesin debug
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -50,4 +54,10 @@ dependencies {
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
 
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

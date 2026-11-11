@@ -57,6 +57,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -113,22 +116,24 @@ private fun Home() {
     var blockTick by remember { mutableIntStateOf(0) }
     var setupOpen by remember { mutableStateOf<Boolean?>(null) }
     var tab by remember { mutableIntStateOf(0) }
+    // Nje gjendje scroll per cdo tab: kalimi s'e humb vendin ku ishe.
+    val scrolls = List(4) { rememberScrollState() }
+    var setupY by remember { mutableIntStateOf(0) }
+    var goSetup by remember { mutableIntStateOf(0) }
+    LaunchedEffect(goSetup) { if (goSetup > 0) { kotlinx.coroutines.delay(50); scrolls[0].animateScrollTo(setupY) } }
 
     LaunchedEffect(refresh) {
-        withContext(Dispatchers.IO) {
-            mode = Shell.mode(ctx, tryConnect = true)
-            today = runCatching { Analyzer(ctx).build(LocalDate.now()) }.getOrNull()
-        }
+        // Lidhja ADB mund te zgjase deri 6 s: s'duhet ta vonoje shfaqjen e te dhenave.
+        launch(Dispatchers.IO) { mode = Shell.mode(ctx, tryConnect = true) }
         usage = Collector.hasUsageAccess(ctx)
+        today = withContext(Dispatchers.IO) { runCatching { Analyzer(ctx).build(LocalDate.now()) }.getOrNull() }
     }
 
     fun work(label: String, block: suspend () -> String?) {
         busy = label
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { block() }.getOrElse { "Error: ${it.message}" } }
-            busy = null; msg = r; refresh++
-            // the message at the top is not visible while scrolled down in Setup
-            if (!r.isNullOrBlank()) android.widget.Toast.makeText(ctx, r, android.widget.Toast.LENGTH_LONG).show()
+            busy = null; if (!r.isNullOrBlank()) msg = r; refresh++
         }
     }
     fun limit(pkg: String, op: String) = work("Limiting permission") {
@@ -157,7 +162,7 @@ private fun Home() {
         }
     }
     LaunchedEffect(Unit) {
-        if (ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
@@ -165,16 +170,29 @@ private fun Home() {
     val stepsDone = listOf(usage, full, monitor, vpn).count { it }
     val showSetup = setupOpen ?: (mode != null && stepsDone < 4)
 
+    // Statusi: shirit progresi i fiksuar lart dhe rezultati poshte, te dukshem nga cdo vend i faqes.
+    val snack = remember { androidx.compose.material3.SnackbarHostState() }
+    LaunchedEffect(msg) {
+        val m = msg ?: return@LaunchedEffect
+        snack.currentSnackbarData?.dismiss()
+        snack.showSnackbar(m, withDismissAction = true, duration = androidx.compose.material3.SnackbarDuration.Long)
+        if (msg == m) msg = null
+    }
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+    busy?.let {
+        androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        Text("$it…", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
+    }
+    Box(Modifier.weight(1f)) {
     Column(
-        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().verticalScroll(scrolls[tab]).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // ---------------- header
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Privacy Guard", fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                Text("Today, ${LocalDate.now()}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM", java.util.Locale.ENGLISH)), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             val m = mode
             Chip(m?.label ?: "Checking…", when (m) { null -> null; Mode.LIMITED -> ORANGE; else -> GREEN })
@@ -182,25 +200,23 @@ private fun Home() {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Chip("Monitor " + if (monitor) "on" else "off", if (monitor) GREEN else ORANGE, small = true)
             Chip("VPN " + if (vpn) "on" else "off", if (vpn) GREEN else ORANGE, small = true)
-            Chip("Usage " + if (usage) "ok" else "missing", if (usage) GREEN else ORANGE, small = true)
+            Chip("Usage access " + if (usage) "on" else "off", if (usage) GREEN else ORANGE, small = true)
         }
         if (mode != null && stepsDone < 4) Banner("Setup incomplete ($stepsDone of 4 done). Some data will be missing.", ORANGE) {
-            TextButton(onClick = { setupOpen = true }) { Text("Open setup") }
+            TextButton(onClick = { setupOpen = true; tab = 0; goSetup++ }) { Text("Open setup") }
         }
 
-        busy?.let { Banner("$it…", MaterialTheme.colorScheme.primary) }
-        msg?.let { Banner(it, null) { TextButton(onClick = { msg = null }) { Text("Dismiss") } } }
         manual?.let { (pkg, r) -> ManualCard(pkg, r) { manual = null } }
 
         // ---------------- today
         val d = today
-        if (d == null) Text("Loading today's data…", fontSize = 13.sp)
-        else if (tab == 1) {
+        if (d == null && tab <= 1) Text("Loading today's data…", fontSize = 13.sp)
+        else if (tab == 1 && d != null) {
             AllActivityCard(d)
             DnsLogCard(d, blockTick, vpn, onHost = ::blockHost, onAllow = { h -> Blocker.setAllowed(ctx, h, true); Blocker.setHost(ctx, h, false); blockTick++; msg = "$h allowed." })
         } else if (tab == 2) {
             AppsTab(blockTick, busy == null, onWork = { l, b -> work(l, b) }, onManual = { pkg, r -> manual = pkg to r }, onChange = { blockTick++ })
-        } else if (tab == 0) {
+        } else if (tab == 0 && d != null) {
             KpiGrid(d)
             Actions(busy == null,
                 onCollect = { work("Collecting") { val r = Collector.snapshot(ctx); "Collected ${r.accessNew} new access records (${r.mode.label}). ${r.note ?: ""}" } },
@@ -229,7 +245,7 @@ private fun Home() {
         FilterListsCard(vpn, blockTick, busy == null, onChange = { blockTick++ },
             onUpdate = { work("Downloading block lists") { com.privacyguard.block.FilterLists.update(ctx, force = true) } })
         FirewallCard(blockTick, busy == null, onChange = { blockTick++ },
-            onSync = { work("Applying firewall") { com.privacyguard.block.Firewall.sync(ctx) ?: "Connect Wireless debugging first (Today → Setup → Full access, option B)." } })
+            onSync = { work("Applying firewall") { com.privacyguard.block.Firewall.sync(ctx) ?: "Connect Wireless debugging first (Today → Setup, step 2, option B)." } })
         BgBlockCard(blockTick, onChange = { blockTick++ })
         BlockSection(vpn, blockTick, onChange = { blockTick++ }, onRestore = { key ->
             work("Restoring") {
@@ -243,6 +259,7 @@ private fun Home() {
 
         // ---------------- setup (collapsed)
         if (tab == 0) {
+        Box(Modifier.onGloballyPositioned { setupY = it.positionInParent().y.toInt() }) {
         SectionCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -251,6 +268,7 @@ private fun Home() {
                 }
                 TextButton(onClick = { setupOpen = !showSetup }) { Text(if (showSetup) "Hide" else "Show") }
             }
+        }
         }
         if (showSetup) {
             Step("1. Usage access", usage,
@@ -325,7 +343,9 @@ private fun Home() {
         }
         Spacer(Modifier.height(24.dp))
     }
-    androidx.compose.material3.NavigationBar {
+    androidx.compose.material3.SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
+    }
+    androidx.compose.material3.NavigationBar(Modifier.testTag("nav")) {
         for ((i, pair) in listOf("Today" to "◉", "Activity" to "≡", "Apps" to "▦", "Blocking" to "⛨").withIndex()) {
             NavigationBarItem(selected = tab == i, onClick = { tab = i },
                 icon = { Text(pair.second, fontSize = 18.sp) }, label = { Text(pair.first) })
@@ -473,7 +493,7 @@ private fun AlertsCard(d: DayReport, onLimit: (String, String) -> Unit, onNet: (
     val groups = d.alerts.groupBy { Triple(it.e.pkg, it.label, it.sev) }.entries.toList()
     var all by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
-    val an = remember { Analyzer(ctx).names }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     SectionCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Title("Alerts")
@@ -535,7 +555,7 @@ private fun TrackersCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String)
     // host -> (company, apps)
     val hosts = d.trackers.flatMap { (pkg, m) -> m.flatMap { (t, u) -> u.hosts.map { Triple(it, t.company, pkg) } } }
         .groupBy { it.first }.entries.sortedByDescending { it.value.size }.take(10)
-    val an = remember { Analyzer(ctx).names }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     SectionCard {
         Title("Trackers today")
         if (hosts.isEmpty()) {
@@ -567,7 +587,7 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
     val apps = remember(tick) { Blocker.apps(ctx).sorted() }
     val hosts = remember(tick) { Blocker.hosts(ctx).sorted() }
     val ops = remember(tick) { Blocker.limited(ctx) }
-    val an = remember { Analyzer(ctx).names }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     SectionCard {
         Title("Blocking")
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -577,7 +597,7 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
             }
             Switch(checked = trackers, onCheckedChange = { Blocker.setTrackers(ctx, it); onChange() })
         }
-        if (!vpn) Banner("Network blocking works through the local VPN, which is off. Turn it on in Setup → step 4.", ORANGE)
+        if (!vpn) Banner("Network blocking works through the local VPN, which is off. Turn it on in Today → Setup, step 4.", ORANGE)
         if (apps.isNotEmpty()) { HorizontalDivider(); Text("Apps without internet", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
         for (a in apps) Row(verticalAlignment = Alignment.CenterVertically) {
             Text(an.name(a), fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -606,12 +626,12 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
 private fun FlowsCard(d: DayReport) {
     if (d.flows.isEmpty()) return
     val ctx = LocalContext.current
-    val an = remember { Analyzer(ctx).names }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     val hm = remember { java.time.format.DateTimeFormatter.ofPattern("HH:mm") }
     fun t(ts: Long) = java.time.Instant.ofEpochMilli(ts).atZone(java.time.ZoneId.systemDefault()).format(hm)
     SectionCard {
-        Title("What apps took → where it went")
-        Hint("Matched by time (tracker contacted within 10 min after the access), not by content.")
+        Title("Data access followed by a tracker")
+        Hint("An app used something sensitive and contacted a tracker within 10 minutes. Matched by time only: the app's traffic is encrypted, so the content cannot be seen.")
         for (f in d.flows.take(8)) {
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -639,7 +659,7 @@ private val groupOrder = listOf(
 @Composable
 private fun AllActivityCard(d: DayReport) {
     val ctx = LocalContext.current
-    val an = remember { Analyzer(ctx).names }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     var sel by remember { mutableStateOf<String?>(null) }
     val byGroup = d.usage.entries.filter { it.value.count > 0 || it.value.reject > 0 }.groupBy { it.key.third }
     SectionCard {
@@ -681,7 +701,7 @@ private fun hmOf(ts: Long) = java.time.Instant.ofEpochMilli(ts).atZone(java.time
 @Composable
 private fun DnsLogCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String) -> Unit, onAllow: (String) -> Unit) {
     val ctx = LocalContext.current
-    val an = remember { Analyzer(ctx).names }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     val blockedHosts = remember(tick) { Blocker.hosts(ctx) }
     var onlyFlagged by remember { mutableStateOf(true) }
     var q by remember { mutableStateOf("") }
@@ -722,38 +742,27 @@ private fun DnsLogCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String) -
 
 // ======================================================================== Apps tab
 
-private class AppsData(
-    val scores: List<com.privacyguard.apps.Score.S>,
-    val sdks: List<Pair<String, List<com.privacyguard.apps.SdkScanner.Sdk>>>,
-    val advice: List<com.privacyguard.apps.PermissionAdvisor.Advice>,
-)
-
 @Composable
 private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> String?) -> Unit,
                     onManual: (String, Blocker.Result.Manual) -> Unit, onChange: () -> Unit) {
     val ctx = LocalContext.current
-    val an = remember { Analyzer(ctx).names }
-    var data by remember { mutableStateOf<AppsData?>(null) }
-    LaunchedEffect(tick) {
-        data = withContext(Dispatchers.IO) {
-            val apps = com.privacyguard.apps.UserApps.list(ctx)
-            AppsData(
-                com.privacyguard.apps.Score.compute(ctx),
-                apps.map { it.packageName to com.privacyguard.apps.SdkScanner.of(ctx, it) }.filter { it.second.isNotEmpty() }
-                    .sortedByDescending { it.second.size },
-                com.privacyguard.apps.PermissionAdvisor.advise(ctx),
-            )
-        }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
+    // Cdo seksion ngarkohet me vete dhe mbahet ne memorie derisa te ndryshoje dicka (tick).
+    val scores = cached("scores", tick) { com.privacyguard.apps.Score.compute(ctx) }
+    val sdks = cached("sdks", tick) {
+        com.privacyguard.apps.UserApps.list(ctx).map { it.packageName to com.privacyguard.apps.SdkScanner.of(ctx, it) }
+            .filter { it.second.isNotEmpty() }.sortedByDescending { it.second.size }
     }
+    val advice = cached("advice", tick) { com.privacyguard.apps.PermissionAdvisor.advise(ctx) }
     val bg = remember(tick) { Blocker.bgApps(ctx) }
     val revoked = remember(tick) { com.privacyguard.apps.PermissionAdvisor.revoked(ctx) }
-    val dd = data
-    if (dd == null) { Banner("Scanning installed apps…", MaterialTheme.colorScheme.primary); return }
     var allScores by remember { mutableStateOf(false) }
     SectionCard {
         Title("Privacy score · last 7 days")
         Hint("100 is clean. Points are lost for alerts, tracker companies contacted, tracker SDKs inside and heavy background uploads.")
-        for (s in if (allScores) dd.scores else dd.scores.take(10)) {
+        val sc = scores
+        if (sc == null) Hint("Calculating…")
+        for (s in if (allScores) sc.orEmpty() else sc.orEmpty().take(10)) {
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(48.dp)) { Chip("${s.score}", when { s.score < 50 -> RED; s.score < 80 -> ORANGE; else -> GREEN }) }
@@ -767,17 +776,17 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
                 }
                 val on = s.pkg in bg
                 TextButton(onClick = { Blocker.setBgApp(ctx, s.pkg, !on); onChange() }) {
-                    Text(if (on) "Bg net: off" else "Limit net", fontSize = 11.sp, color = if (on) RED else MaterialTheme.colorScheme.primary)
+                    Text(if (on) "Internet limited" else "Limit internet", fontSize = 11.sp, color = if (on) RED else MaterialTheme.colorScheme.primary)
                 }
             }
         }
-        if (dd.scores.size > 10) TextButton(onClick = { allScores = !allScores }) { Text(if (allScores) "Show less" else "Show all ${dd.scores.size}") }
-        Hint("“Limit net” lets the app use the internet only while it is on screen.")
+        if ((sc?.size ?: 0) > 10) TextButton(onClick = { allScores = !allScores }) { Text(if (allScores) "Show less" else "Show all ${sc!!.size}") }
+        Hint("“Limit internet” lets the app go online only while it is on screen.")
     }
 
     SectionCard {
         Title("Tracker SDKs inside apps")
-        Hint("Found in each app's manifest and, after a deep scan, in its code (989 signatures from App Manager / Exodus Privacy). An SDK inside does not mean it is active, but it can send data whenever the app runs.")
+        Hint("Found in each app's manifest and, after a deep scan, in its code (about 1,000 signatures from App Manager and Exodus Privacy). An SDK inside does not mean it is active, but it can send data whenever the app runs.")
         val deep = com.privacyguard.apps.DeepScanWorker
         var prog by remember { mutableStateOf(deep.progress(ctx)) }
         LaunchedEffect(prog.first) { while (prog.first) { kotlinx.coroutines.delay(1500); prog = deep.progress(ctx); if (!prog.first) onChange() } }
@@ -792,8 +801,10 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
             if (at > 0) Hint("Last deep scan: " + java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault())
                 .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm")))
         }
-        if (dd.sdks.isEmpty()) Text("No known tracker SDKs found.", fontSize = 13.sp, color = GREEN)
-        for ((pkg, list) in dd.sdks.take(25)) {
+        val sd = sdks
+        if (sd == null) Hint("Checking apps…")
+        else if (sd.isEmpty()) Text("No known tracker SDKs found.", fontSize = 13.sp, color = GREEN)
+        for ((pkg, list) in sd.orEmpty().take(25)) {
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(an.name(pkg), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -807,9 +818,12 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
         Title("Permission advisor")
         Hint("Permissions an app holds but has not used, or that do not fit the kind of app. Removing one is safe: the app asks again if it needs it.")
         var weak by remember { mutableStateOf(false) }
-        val strong = dd.advice.filter { it.strong }
-        val shown = if (weak) dd.advice else strong
-        if (shown.isEmpty()) Text("Nothing clear to suggest yet.", fontSize = 13.sp, color = GREEN)
+        val gone = remember { androidx.compose.runtime.mutableStateListOf<String>() }
+        val adv = advice.orEmpty()
+        val strong = adv.filter { it.strong }
+        val shown = (if (weak) adv else strong).filter { "${it.pkg}|${it.group.id}" !in revoked && "${it.pkg}|${it.group.id}" !in gone }
+        if (advice == null) Hint("Checking permissions…")
+        else if (shown.isEmpty()) Text("Nothing clear to suggest yet.", fontSize = 13.sp, color = GREEN)
         for (a in shown.take(40)) {
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -821,13 +835,13 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
                     onWork("Removing permission") {
                         when (val r = com.privacyguard.apps.PermissionAdvisor.revoke(ctx, a)) {
                             is Blocker.Result.Manual -> { onManual(a.pkg, r); null }
-                            is Blocker.Result.Done -> { onChange(); r.msg }
+                            is Blocker.Result.Done -> { if (!r.msg.startsWith("Failed")) gone += "${a.pkg}|${a.group.id}"; onChange(); r.msg }
                         }
                     }
                 }) { Text("Remove", fontSize = 12.sp) }
             }
         }
-        val nWeak = dd.advice.size - strong.size
+        val nWeak = adv.size - strong.size
         if (nWeak > 0) TextButton(onClick = { weak = !weak }) {
             Text(if (weak) "Hide permissions that just haven't been used yet" else "Show $nWeak more (not used yet, still watching)")
         }
@@ -842,7 +856,7 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
                         is Blocker.Result.Done -> { onChange(); r.msg }
                     }
                 }
-            }) { Text("Give back", fontSize = 12.sp) }
+            }) { Text("Restore", fontSize = 12.sp) }
         }
     }
     InspectCard()
@@ -856,9 +870,9 @@ private fun FilterListsCard(vpn: Boolean, tick: Int, enabled: Boolean, onChange:
     val ctx = LocalContext.current
     val fl = com.privacyguard.block.FilterLists
     SectionCard {
-        Title("Block lists (like uBlock Origin)")
+        Title("Block lists")
         Hint("Blocks ads, trackers and dangerous sites for every app, at the DNS level. Facebook, Instagram, WhatsApp and every app's own servers are never blocked by a list. Lists update weekly.")
-        if (!vpn) Banner("Lists work through the local VPN, which is off. Turn it on in Today → Setup → step 4.", ORANGE)
+        if (!vpn) Banner("Lists work through the local VPN, which is off. Turn it on in Today → Setup, step 4.", ORANGE)
         for (d in fl.all) {
             val on = remember(tick) { fl.enabled(ctx, d.id) }
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
@@ -884,11 +898,11 @@ private fun FilterListsCard(vpn: Boolean, tick: Int, enabled: Boolean, onChange:
 @Composable
 private fun BgBlockCard(tick: Int, onChange: () -> Unit) {
     val ctx = LocalContext.current
-    val an = remember { Analyzer(ctx).names }
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     val bg = remember(tick) { Blocker.bgApps(ctx).sorted() }
     SectionCard {
-        Title("Internet only while open")
-        Hint("These apps cannot reach the internet when they are not on screen. Add apps from the Apps tab (Limit net). Music or navigation apps would stop in the background.")
+        Title("Internet only while on screen")
+        Hint("These apps cannot reach the internet when they are not on screen. Add apps from the Apps tab with “Limit internet”. Music or navigation apps would stop in the background.")
         if (bg.isEmpty()) Text("No apps limited.", fontSize = 13.sp)
         for (p in bg) Row(verticalAlignment = Alignment.CenterVertically) {
             Text(an.name(p), fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -906,7 +920,7 @@ private fun FirewallCard(tick: Int, enabled: Boolean, onChange: () -> Unit, onSy
     val pending = remember(tick) { fw.pending(ctx) }
     val anti = remember(tick) { Blocker.antiBypass(ctx) }
     SectionCard {
-        Title("Full blocking")
+        Title("Firewall")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Firewall for “Apps without internet”", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)

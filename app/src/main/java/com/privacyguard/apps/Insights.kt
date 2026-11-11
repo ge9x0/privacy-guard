@@ -29,6 +29,7 @@ object Insights {
 
     /** Thirret nga MonitorService kur instalohet nje app i ri. */
     fun onInstalled(ctx: Context, pkg: String) {
+        UserApps.invalidate()
         val pi = UserApps.info(ctx, pkg) ?: return
         if (pi.applicationInfo?.let { it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0 } == true) return
         val sdks = SdkScanner.of(ctx, pi, deep = true)

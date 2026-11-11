@@ -133,10 +133,10 @@ class MonitorService : Service() {
         names = AppNames(this)
         thread = HandlerThread("pg-monitor").apply { start() }
         worker = Handler(thread.looper)
-        startForeground(
+        if (android.os.Build.VERSION.SDK_INT >= 34) startForeground(
             App.NOTIF_MONITOR, ongoing("Watching the microphone and camera"),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-        )
+        ) else startForeground(App.NOTIF_MONITOR, ongoing("Watching the microphone and camera"))
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
         }, ContextCompat.RECEIVER_NOT_EXPORTED)

@@ -19,9 +19,8 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun DebloatCard(tick: Int, enabled: Boolean, onWork: (String, suspend () -> String?) -> Unit,
                          onManual: (String, Blocker.Result.Manual) -> Unit, onChange: () -> Unit) {
-    val ctx = LocalContextCompat()
-    var items by remember { mutableStateOf<List<Debloat.Item>?>(null) }
-    LaunchedEffect(tick) { items = withContext(Dispatchers.IO) { Debloat.items(ctx) } }
+    val ctx = localContext()
+    val items = cached("debloat", tick) { Debloat.items(ctx) }
     var advanced by remember { mutableStateOf(false) }
     var ask by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }
@@ -64,7 +63,7 @@ internal fun DebloatCard(tick: Int, enabled: Boolean, onWork: (String, suspend (
                         is Blocker.Result.Done -> { onChange(); r.msg }
                     }
                 }
-            }) { Text("Restore", fontSize = 12.sp) }
+            }) { Text(if (it.system) "Restore" else "Reinstall", fontSize = 12.sp) }
         }
         Hint("List: android-debloat-list by Muntashir Al-Islam and contributors, AGPL-3.0.")
     }
@@ -101,15 +100,15 @@ private fun DebloatRow(it: Debloat.Item, expanded: Boolean, toggle: () -> Unit, 
 
 @Composable
 internal fun InspectCard() {
-    val ctx = LocalContextCompat()
-    val an = remember { Analyzer(ctx).names }
+    val ctx = localContext()
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
     var q by remember { mutableStateOf("") }
     var system by remember { mutableStateOf(false) }
-    val apps = remember(system) {
+    val apps = cached("inspect:$system", 0) {
         ctx.packageManager.getInstalledApplications(0)
             .filter { system || it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM == 0 }
             .map { it.packageName }.sortedBy { an.name(it).lowercase() }
-    }
+    }.orEmpty()
     var pick by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
     var view by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -164,4 +163,27 @@ internal fun InspectCard() {
 }
 
 @Composable
-private fun LocalContextCompat() = androidx.compose.ui.platform.LocalContext.current
+private fun localContext() = androidx.compose.ui.platform.LocalContext.current
+
+/** Rezultatet e tab-eve mbahen ne memorie: kalimi midis tab-eve s'i rillogarit, vetem kur `tick` ndryshon. */
+internal object TabCache {
+    private val m = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Any?>>()
+    @Suppress("UNCHECKED_CAST")
+    fun <T> get(key: String, tick: Int): T? = m[key]?.takeIf { it.first == tick }?.second as T?
+    @Suppress("UNCHECKED_CAST")
+    fun <T> any(key: String): T? = m[key]?.second as T?
+    fun put(key: String, tick: Int, v: Any?) { m[key] = tick to v }
+}
+
+/** Vlera e ngarkuar ne IO; tregon vleren e vjeter derisa te vije e reja. */
+@Composable
+internal fun <T> cached(key: String, tick: Int, load: () -> T): T? {
+    var v by remember { mutableStateOf(TabCache.any<T>(key)) }
+    LaunchedEffect(key, tick) {
+        TabCache.get<T>(key, tick)?.let { v = it; return@LaunchedEffect }
+        // Nje gabim ne nje seksion (p.sh. sistemi s'pergjigjet) s'duhet ta rrezoje app-in.
+        val r = withContext(Dispatchers.IO) { runCatching { load() }.onFailure { android.util.Log.w("PG.UI", "load $key", it) }.getOrNull() }
+        if (r != null) { TabCache.put(key, tick, r); v = r }
+    }
+    return v
+}

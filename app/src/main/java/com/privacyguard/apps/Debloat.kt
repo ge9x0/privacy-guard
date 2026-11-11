@@ -20,7 +20,7 @@ object Debloat {
         /** delete/replace jane te sigurta; caution/unsafe kerkojne paralajmerim. */
         val safe get() = removal == "delete" || removal == "replace"
     }
-    data class Item(val e: Entry, val name: String, val removed: Boolean)
+    data class Item(val e: Entry, val name: String, val removed: Boolean, val system: Boolean = true)
 
     /** Kurre: pa keto humbet ADB-ja, ekrani ose vete Privacy Guard. */
     private val never = setOf("android", "com.android.shell", "com.android.systemui", "com.android.settings",
@@ -48,11 +48,18 @@ object Debloat {
     fun items(ctx: Context): List<Item> {
         val pm = ctx.packageManager
         val self = setOf(defaultLauncher(ctx), defaultIme(ctx))
+        // Nje thirrje e vetme ne vend te ~4800 (nje per cdo hyrje te listes).
+        @Suppress("DEPRECATION")
+        val have = pm.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).associateBy { it.packageName }
         return entries(ctx).mapNotNull { e ->
             if (e.id in never || e.id in self) return@mapNotNull null
-            val ai = runCatching { pm.getApplicationInfo(e.id, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.getOrNull() ?: return@mapNotNull null
+            val ai = have[e.id] ?: return@mapNotNull null
             val removed = ai.flags and ApplicationInfo.FLAG_INSTALLED == 0
-            Item(e, e.label ?: runCatching { ai.loadLabel(pm).toString() }.getOrDefault(e.id), removed)
+            // Vetem app-e te sistemit: per app-et e instaluara nga Play (p.sh. Office i Samsung-ut)
+            // "pm uninstall --user 0" fshin APK-ne vertete dhe install-existing s'ka cfare te ktheje.
+            val system = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0
+            if (!system && !removed) return@mapNotNull null
+            Item(e, e.label ?: runCatching { ai.loadLabel(pm).toString() }.getOrDefault(e.id), removed, system)
         }.sortedWith(compareBy({ !it.removed }, { order(it.e.removal) }, { it.name.lowercase() }))
     }
 
@@ -73,7 +80,18 @@ object Debloat {
     fun remove(ctx: Context, pkg: String) = exec(ctx, removeCmd(pkg), "Removed for your user. The app's files stay on the phone; tap Restore any time.",
         "Removing a system app needs Wireless debugging connected (Shell access). Or run from a computer:") { it.contains("Success") }
 
-    fun restore(ctx: Context, pkg: String) = exec(ctx, restoreCmd(pkg), "Restored.",
+    fun restore(ctx: Context, pkg: String): Blocker.Result {
+        val ai = runCatching { ctx.packageManager.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.getOrNull()
+        if (ai != null && ai.flags and ApplicationInfo.FLAG_SYSTEM == 0) {
+            // APK-ja s'eshte me ne telefon; te dhenat po. Hapet faqja e dyqanit.
+            runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("market://details?id=$pkg")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            return Blocker.Result.Done("This app was installed from the store, so it must be installed again from there. Your data was kept.")
+        }
+        return restoreSystem(ctx, pkg)
+    }
+
+    private fun restoreSystem(ctx: Context, pkg: String) = exec(ctx, restoreCmd(pkg), "Restored.",
         "Restoring needs Wireless debugging connected. Or run from a computer:") { it.contains("installed for user", true) }
 
     private fun exec(ctx: Context, cmd: String, ok: String, manual: String, success: (String) -> Boolean): Blocker.Result {

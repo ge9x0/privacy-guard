@@ -5,3 +5,7 @@ local.properties
 *.iml
 .idea/
 samples/
+*.apk
+*.pdf
+*.hprof
+.DS_Store

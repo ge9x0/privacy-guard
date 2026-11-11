@@ -13,21 +13,39 @@ import com.privacyguard.core.Trackers
 import com.privacyguard.data.Db
 import java.time.LocalDate
 
+/** Android 11-12 s'kane PackageInfoFlags (API 33); pa kete app-i rrezohet atje. */
+object Compat {
+    @Suppress("DEPRECATION")
+    fun packageInfo(pm: PackageManager, pkg: String, flags: Int): PackageInfo =
+        if (android.os.Build.VERSION.SDK_INT >= 33) pm.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(flags.toLong()))
+        else pm.getPackageInfo(pkg, flags)
+}
+
 /** App-et e instaluara nga perdoruesi (jo te sistemit), me emrin. */
 object UserApps {
-    fun list(ctx: Context): List<PackageInfo> {
-        val pm = ctx.packageManager
-        val flags = PackageManager.GET_ACTIVITIES or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or
-            PackageManager.GET_PROVIDERS or PackageManager.GET_META_DATA or PackageManager.GET_PERMISSIONS
-        return pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(flags.toLong()))
-            .filter { it.applicationInfo?.let { a -> a.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0 } == true }
-            .filter { it.packageName != ctx.packageName }
+    private val lock = Any()
+    @Volatile private var last: Pair<Long, List<PackageInfo>>? = null
+
+    /**
+     * Lista e plote me komponentet e cdo app-i. Kerkohet app per app: nje kerkese e vetme per
+     * te gjitha app-et me te gjitha detajet mund te kaloje kufirin e binder-it ne telefona me pak RAM
+     * (Android 11 e nderpret lidhjen). Mbahet 60 s qe seksionet e tab-it Apps ta ndajne.
+     */
+    fun list(ctx: Context): List<PackageInfo> = synchronized(lock) {
+        last?.takeIf { System.currentTimeMillis() - it.first < 60_000 }?.let { return it.second }
+        @Suppress("DEPRECATION")
+        val names = ctx.packageManager.getInstalledApplications(0)
+            .filter { it.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0 }
+            .map { it.packageName }.filter { it != ctx.packageName }
+        names.mapNotNull { info(ctx, it) }.also { last = System.currentTimeMillis() to it }
     }
+
+    fun invalidate() { last = null }
 
     fun info(ctx: Context, pkg: String): PackageInfo? = runCatching {
         val flags = PackageManager.GET_ACTIVITIES or PackageManager.GET_SERVICES or PackageManager.GET_RECEIVERS or
             PackageManager.GET_PROVIDERS or PackageManager.GET_META_DATA or PackageManager.GET_PERMISSIONS
-        ctx.packageManager.getPackageInfo(pkg, PackageManager.PackageInfoFlags.of(flags.toLong()))
+        Compat.packageInfo(ctx.packageManager, pkg, flags)
     }.getOrNull()
 }
 
