@@ -141,14 +141,16 @@ class DnsVpnService : VpnService() {
         val dst = Packets.ipv4Dst(buf, n) ?: return
         if (dst !in bypassIps) return
         val syn = Packets.isTcpSyn(buf, n)
-        Packets.tcpReset(buf, n)?.let { rst -> runCatching { synchronized(out) { out.write(rst) } } }
-        if (!syn && Packets.proto(buf) == 6) return
-        val ports = Packets.ports(buf, n) ?: return
-        val uid = runCatching {
+        val rst = Packets.tcpReset(buf, n)
+        val ports = Packets.ports(buf, n)
+        // uid-i merret PARA RST-se: pas saj socket-i mbyllet dhe Android-i kthen -1
+        val uid = if (ports != null && (syn || Packets.proto(buf) == 17)) runCatching {
             cm.getConnectionOwnerUid(Packets.proto(buf),
                 InetSocketAddress(InetAddress.getByAddress(buf.copyOfRange(12, 16)), ports.first),
                 InetSocketAddress(InetAddress.getByAddress(buf.copyOfRange(16, 20)), ports.second))
-        }.getOrDefault(-1)
+        }.getOrDefault(-1) else -1
+        rst?.let { runCatching { synchronized(out) { out.write(it) } } }
+        if (ports == null || (!syn && Packets.proto(buf) == 6)) return
         val key = "$uid|$dst|${ports.second}"
         val now = System.currentTimeMillis()
         if ((bypassLogged.put(key, now) ?: 0L) > now - 60_000) return
