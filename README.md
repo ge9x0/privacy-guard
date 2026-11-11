@@ -4,6 +4,8 @@ An Android app that shows what your apps really do: who used the microphone, cam
 
 Everything runs on the phone. No account, no cloud, no analytics. The only network requests the app makes are the optional block-list downloads (from jsDelivr, with GitHub as a fallback).
 
+📖 **[User guide](docs/GUIDE.md)**: setup step by step, every screen explained, common tasks and troubleshooting.
+
 **Requirements:** Android 11 or newer. Tested on a Samsung Galaxy A35 (Android 17) and on clean Android 11 and Android 14 emulators.
 
 ## Features
