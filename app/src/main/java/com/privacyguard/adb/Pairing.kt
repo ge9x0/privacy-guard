@@ -39,7 +39,7 @@ object Pairing {
         discover(app, "_adb-tls-pairing._tcp") { port ->
             notify(app, "Found port $port. Type the 6-digit code from Settings here.", port)
         }
-        // ndal kerkimin pas 5 minutash
+        // stop searching after 5 minutes
         main.postDelayed({ stop(app) }, 5 * 60_000L)
     }
 

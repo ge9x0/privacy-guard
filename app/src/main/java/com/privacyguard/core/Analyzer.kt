@@ -18,7 +18,7 @@ enum class Sev(val label: String, val color: Int, val order: Int) {
 }
 
 object Ops {
-    /** op -> (emri, grupi) */
+    /** op -> (name, group) */
     val map = mapOf(
         "RECORD_AUDIO" to ("Microphone" to "mic"),
         "CAMERA" to ("Camera" to "cam"),

@@ -1,4 +1,4 @@
-# libadb-android dhe BouncyCastle perdorin reflection (ofruesit e kriptografise, TLS per Wireless debugging)
+# libadb-android and BouncyCastle use reflection (crypto providers, TLS for Wireless debugging)
 -keep class io.github.muntashirakon.adb.** { *; }
 -keep class org.bouncycastle.** { *; }
 -keep class org.conscrypt.** { *; }
@@ -6,5 +6,5 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.openjsse.**
 -dontwarn javax.naming.**
-# Stack trace te lexueshme ne raportet e gabimeve
+# Readable stack traces in crash reports
 -keepattributes SourceFile,LineNumberTable

@@ -112,7 +112,7 @@ object Blocker {
         return (0 until parts.size - 1).map { parts.subList(it, parts.size).joinToString(".") }
     }
 
-    // ------------------------------------------------------------------ lejet
+    // ------------------------------------------------------------------ permissions
     /** Ops limited for an alert group; for "personal" etc. only the specific op. */
     fun opsFor(op: String): List<String> = when (Ops.map[op]?.second) {
         "mic" -> listOf("RECORD_AUDIO")
@@ -162,11 +162,11 @@ object Blocker {
         for (o in ops) {
             val prev = uidMode(ctx, pkg, o) ?: "allow"
             val r = runCatching { Shell.adb(ctx, cmdSet(pkg, o, mode)) }.getOrElse { "error: ${it.message}" }
-            Log.i(TAG, "limit $pkg $o -> $mode (ishte $prev): ${r.trim()}")
+            Log.i(TAG, "limit $pkg $o -> $mode (was $prev): ${r.trim()}")
             if (r.isNotBlank()) { e.apply(); return Result.Done("Failed: ${r.trim()}") }
             val now = uidMode(ctx, pkg, o)
             if (now != mode) {
-                Log.w(TAG, "limit $pkg $o: Android-i e la '$now'")
+                Log.w(TAG, "limit $pkg $o: Android left it at '$now'")
                 e.apply()
                 return Result.Manual(
                     "Android did not allow this change for this app (it stayed \"${now ?: "allow"}\"), usually because it is a system app. " +

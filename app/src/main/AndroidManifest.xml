@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Normale -->
+    <!-- Normal -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -13,10 +13,10 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-    <!-- Jepet nga perdoruesi te "Usage access" -->
+    <!-- Granted by the user under "Usage access" -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
-    <!-- Jepen me "pm grant" (nga kompjuteri ose nga vete app-i me Wireless debugging) -->
+    <!-- Granted with "pm grant" (from a computer or by the app itself over Wireless debugging) -->
     <uses-permission android:name="android.permission.DUMP"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.GET_APP_OPS_STATS"

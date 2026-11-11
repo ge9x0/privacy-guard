@@ -125,7 +125,7 @@ class DnsVpnService : VpnService() {
                     val nx = if (why != null) Packets.nxdomain(pkt, q) else null
                     runCatching { db.addConn(ConnRow(ts, uid, q.name, q.payloadLen.toLong(), blocked = nx != null, why = why)) }
                     if (nx != null) {
-                        Log.d(TAG, "bllokuar ($why) uid=$uid ${q.name}")
+                        Log.d(TAG, "blocked ($why) uid=$uid ${q.name}")
                         runCatching { synchronized(output) { output.write(Packets.buildUdpReply(q, nx, nx.size)) } }
                     } else forward(pkt, q, up, output)
                 }

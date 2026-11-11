@@ -34,7 +34,7 @@ android {
     }
     buildTypes {
         release {
-            // R8: kodi i optimizuar e ben nderfaqen Compose disa here me te shpejte se build-i debug
+            // R8: optimized code makes the Compose UI several times faster than the debug build
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -61,10 +61,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // ADB brenda app-it (Wireless debugging me vetveten), si LADB/Shizuku
+    // ADB inside the app (Wireless debugging to itself), like LADB/Shizuku
     implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
     implementation("org.conscrypt:conscrypt-android:2.5.3")
-    // certifikata per celesin ADB
+    // certificate for the ADB key
     implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
 
     testImplementation("junit:junit:4.13.2")

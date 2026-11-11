@@ -58,7 +58,7 @@ object History {
     }
 }
 
-/** Pas restartimit: monitorimi rinis vete (App.onCreate). VPN-ja rinis nese ishte ndezur. */
+/** After a restart: monitoring restarts by itself (App.onCreate). The VPN restarts if it was on. */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return

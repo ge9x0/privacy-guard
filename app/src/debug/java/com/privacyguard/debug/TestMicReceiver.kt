@@ -28,12 +28,12 @@ class TestMicReceiver : BroadcastReceiver() {
                 @Suppress("MissingPermission")
                 val rec = AudioRecord(MediaRecorder.AudioSource.MIC, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2)
                 rec.startRecording()
-                Log.i(TAG, "mikrofoni u nis (state=${rec.recordingState})")
+                Log.i(TAG, "microphone started (state=${rec.recordingState})")
                 val buf = ShortArray(min)
                 val end = System.currentTimeMillis() + secs * 1000L
                 while (System.currentTimeMillis() < end) rec.read(buf, 0, buf.size)
                 rec.stop(); rec.release()
-                Log.i(TAG, "mikrofoni u ndal")
+                Log.i(TAG, "microphone stopped")
             } catch (e: Throwable) {
                 Log.w(TAG, "prova deshtoi", e)
             } finally {

@@ -182,7 +182,7 @@ class MonitorService : Service() {
         super.onDestroy()
     }
 
-    // ------------------------------------------------------------------ ekrani
+    // ------------------------------------------------------------------ screen
     private fun screenOn() = getSystemService(PowerManager::class.java).isInteractive
 
     private fun sampleScreen() {
@@ -259,7 +259,7 @@ class MonitorService : Service() {
         })
     }
 
-    // ------------------------------------------------------------------ njoftimet
+    // ------------------------------------------------------------------ notifications
     private fun alertOff(what: String, pkgs: Set<String>) {
         val real = pkgs.filter { it !in Ops.knownSystem }
         if (pkgs.isNotEmpty() && real.isEmpty()) { Log.i(TAG, "alert $what: system apps only $pkgs"); return }   // e.g. Google Assistant
@@ -271,7 +271,7 @@ class MonitorService : Service() {
             .setContentIntent(openApp())
             .setAutoCancel(true)
             .build()
-        Log.i(TAG, "alert $what: njoftim per $who")
+        Log.i(TAG, "alert $what: notification for $who")
         getSystemService(NotificationManager::class.java).notify((System.currentTimeMillis() % 100000).toInt(), n)
     }
 
