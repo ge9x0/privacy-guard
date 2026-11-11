@@ -63,6 +63,8 @@ object Ops {
     private val owners = mapOf(
         "READ_CALENDAR" to listOf("calendar"), "READ_CONTACTS" to listOf("contacts", "dialer", "phone", "messaging"),
         "READ_CALL_LOG" to listOf("dialer", "phone", "contacts"), "READ_SMS" to listOf("messaging", "sms", "mms"),
+        "READ_PHONE_NUMBERS" to listOf("contacts", "dialer", "phone", "messaging"),
+        "GET_ACCOUNTS" to listOf("contacts", "calendar", "gm", "gms"),
     )
     fun ownsData(op: String, pkg: String) =
         vendors.any { pkg.startsWith(it) } && owners[op].orEmpty().any { it in pkg.substringAfter('.') }
@@ -170,6 +172,17 @@ data class Flow(
     val txBg: Long,
 )
 
+/**
+ * Nje rresht i regjistrit DNS: kush (app), cilin server, sa here, a u bllokua dhe pse.
+ * kind: "tracker" (lista jone), "list" (nje liste bllokimi e njeh), "keyword" (emri tregon gjurmim), null = normal.
+ */
+data class DnsEntry(
+    val pkg: String, val host: String, val count: Int, val blocked: Int, val why: String?,
+    val tracker: Trackers.T?, val list: String?, val keyword: String?, val last: Long,
+) {
+    val kind get() = when { tracker != null -> "tracker"; list != null -> "list"; keyword != null -> "keyword"; else -> null }
+}
+
 data class DayReport(
     val day: LocalDate,
     val events: List<Ev>,
@@ -180,6 +193,7 @@ data class DayReport(
     val screen: List<ScreenRow>,
     val hasConnData: Boolean,
     val flows: List<Flow> = emptyList(),
+    val dns: List<DnsEntry> = emptyList(),
 ) {
     private fun tot(g: String, f: (Ev) -> Long): Long = events.filter { it.group == g && it.e.kind == "access" }.sumOf(f)
     val micN get() = tot("mic") { 1 }.toInt()
@@ -189,6 +203,8 @@ data class DayReport(
     val locN get() = tot("loc") { 1 }.toInt()
     val crit get() = alerts.count { it.sev == Sev.CRIT }
     val high get() = alerts.count { it.sev == Sev.HIGH }
+    /** Sa raste te ndryshme (app + e dhene), jo sa evente: 10 lexime te kontakteve nga i njejti app = 1. */
+    fun cases(s: Sev) = alerts.filter { it.sev == s }.map { it.e.pkg to it.label }.toSet().size
     val txBg get() = net.values.sumOf { it.txBg }
     val tx get() = net.values.sumOf { it.tx }
     val trk get() = trackers.values.sumOf { m -> m.values.sumOf { it.count } }
@@ -301,7 +317,19 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
             u.hosts += c.host; u.count++
         }
         val flows = flows(events, conns, trk, net)
-        return DayReport(day, events, alerts, usage, net, trk, screen.filter { it.ts >= from }, conns.isNotEmpty(), flows)
+        return DayReport(day, events, alerts, usage, net, trk, screen.filter { it.ts >= from }, conns.isNotEmpty(), flows, dnsLog(conns))
+    }
+
+    private fun dnsLog(conns: List<ConnRow>): List<DnsEntry> {
+        val listHit = HashMap<String, String?>()
+        return conns.groupBy { (if (it.uid >= 0) names.pkgForUid(it.uid) else AppNames.UNKNOWN) to it.host.lowercase().trimEnd('.') }
+            .map { (k, rows) ->
+                val (pkg, host) = k
+                val t = Trackers.classify(host)?.takeIf { !Trackers.isFirstParty(it, pkg) }
+                val list = listHit.getOrPut(host) { runCatching { com.privacyguard.block.FilterLists.match(ctx, host) }.getOrNull() }
+                DnsEntry(pkg, host, rows.size, rows.count { it.blocked }, rows.lastOrNull { it.blocked }?.why, t,
+                    list, if (t == null) Trackers.keyword(host) else null, rows.maxOf { it.ts })
+            }.sortedWith(compareBy({ it.kind == null }, { -it.count }))
     }
 
     /** Lidh qasjet ne te dhena personale me trackerat qe i kontaktoi i njejti app brenda 10 minutash. */

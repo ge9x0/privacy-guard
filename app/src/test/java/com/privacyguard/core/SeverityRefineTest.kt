@@ -17,6 +17,9 @@ class SeverityRefineTest {
         assertEquals(Sev.INFO, sev("personal", "READ_CALENDAR", "com.samsung.android.calendar", false))
         assertEquals(Sev.HIGH, sev("personal", "READ_CONTACTS", "com.google.android.calendar", false)) // not its data
         assertEquals(Sev.HIGH, sev("personal", "READ_CALENDAR", "com.example.calendar", false))        // not a vendor
+        assertEquals(Sev.INFO, sev("personal", "READ_PHONE_NUMBERS", "com.google.android.contacts", false))
+        assertEquals(Sev.HIGH, sev("personal", "READ_PHONE_NUMBERS", "com.instagram.android", false))
+        assertEquals(Sev.HIGH, sev("personal", "READ_CALL_LOG", "com.truecaller", false))
     }
 
     @Test fun messengersSyncingContactsAreMedium() {

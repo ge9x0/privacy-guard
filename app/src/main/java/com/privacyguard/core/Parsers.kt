@@ -139,6 +139,7 @@ object AppOpsParser {
 /** Gjen kush po perdor mikrofonin/kameren tani, nga `dumpsys audio` dhe `dumpsys media.camera`. */
 object LiveParser {
     private val rePack = Regex("""pack(?:age)?[:=]\s*([A-Za-z0-9_.]+)""", RegexOption.IGNORE_CASE)
+    private val reRecEvent = Regex("""\brec\s+(start|update|stop|release)\b.*?\briid:(\d+).*?\bpack:([A-Za-z0-9_.]+)""", RegexOption.IGNORE_CASE)
     private val reCamClient = Regex("""Client\s+package:\s*([A-Za-z0-9_.]+)""")
 
     fun micPackages(audioDump: String): Set<String> {
@@ -146,6 +147,15 @@ object LiveParser {
         val start = audioDump.indexOf("RecordActivityMonitor").takeIf { it >= 0 }
             ?: audioDump.indexOf("AudioRecordingConfiguration").takeIf { it >= 0 } ?: return emptySet()
         val section = audioDump.substring(start, minOf(audioDump.length, start + 6000))
+        // Android 14+: "rec start/update/stop riid:N ... pack:X" eshte HISTORI (perfshin app-e te fshira).
+        // Aktiv eshte vetem riid qe s'ka "stop/release" pas "start/update".
+        val evs = reRecEvent.findAll(section).toList()
+        if (evs.isNotEmpty()) {
+            val last = LinkedHashMap<String, Pair<String, String>>()
+            for (m in evs) last[m.groupValues[2]] = m.groupValues[1].lowercase() to m.groupValues[3]
+            return last.values.filter { it.first == "start" || it.first == "update" }.map { it.second }
+                .filter { it != "android" }.toSet()
+        }
         return section.lineSequence()
             .filter { it.contains("rec", true) || it.contains("session", true) }
             .mapNotNull { rePack.find(it)?.groupValues?.get(1) }

@@ -18,10 +18,10 @@ data class AccessEvent(
 )
 
 data class NetRow(val uid: Int, val net: String, val set: String, val bucket: Long, val rx: Long, val tx: Long)
-data class ConnRow(val ts: Long, val uid: Int, val host: String, val bytes: Long, val blocked: Boolean = false)
+data class ConnRow(val ts: Long, val uid: Int, val host: String, val bytes: Long, val blocked: Boolean = false, val why: String? = null)
 data class ScreenRow(val ts: Long, val on: Boolean, val topPkg: String?)
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db", null, 2) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE access (pkg TEXT, uid INTEGER, op TEXT, ts INTEGER, duration_ms INTEGER,
@@ -29,13 +29,15 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
         db.execSQL("""CREATE TABLE net (uid INTEGER, net TEXT, nset TEXT, bucket INTEGER, rx INTEGER, tx INTEGER,
             PRIMARY KEY(uid, net, nset, bucket))""")
         db.execSQL("CREATE TABLE screen (ts INTEGER PRIMARY KEY, screen_on INTEGER, top_pkg TEXT)")
-        db.execSQL("CREATE TABLE conn (ts INTEGER, uid INTEGER, host TEXT, bytes INTEGER, blocked INTEGER DEFAULT 0)")
+        db.execSQL("CREATE TABLE conn (ts INTEGER, uid INTEGER, host TEXT, bytes INTEGER, blocked INTEGER DEFAULT 0, why TEXT)")
         db.execSQL("CREATE INDEX conn_ts ON conn(ts)")
         db.execSQL("CREATE INDEX access_ts ON access(ts)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("ALTER TABLE conn ADD COLUMN blocked INTEGER DEFAULT 0")
+        // v3: arsyeja e bllokimit ("tracker", "list:pro", "background"...)
+        if (oldVersion < 3) db.execSQL("ALTER TABLE conn ADD COLUMN why TEXT")
     }
 
     fun addAccess(events: List<AccessEvent>): Int {
@@ -70,7 +72,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
     }
 
     fun addConn(r: ConnRow) {
-        val cv = ContentValues().apply { put("ts", r.ts); put("uid", r.uid); put("host", r.host); put("bytes", r.bytes); put("blocked", if (r.blocked) 1 else 0) }
+        val cv = ContentValues().apply { put("ts", r.ts); put("uid", r.uid); put("host", r.host); put("bytes", r.bytes); put("blocked", if (r.blocked) 1 else 0); put("why", r.why) }
         writableDatabase.insert("conn", null, cv)
     }
 
@@ -113,10 +115,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
     fun conns(from: Long, to: Long): List<ConnRow> {
         val out = ArrayList<ConnRow>()
         readableDatabase.rawQuery(
-            "SELECT ts,uid,host,bytes,blocked FROM conn WHERE ts>=? AND ts<?",
+            "SELECT ts,uid,host,bytes,blocked,why FROM conn WHERE ts>=? AND ts<?",
             arrayOf(from.toString(), to.toString())
         ).use { c ->
-            while (c.moveToNext()) out += ConnRow(c.getLong(0), c.getInt(1), c.getString(2), c.getLong(3), c.getInt(4) == 1)
+            while (c.moveToNext()) out += ConnRow(c.getLong(0), c.getInt(1), c.getString(2), c.getLong(3), c.getInt(4) == 1, c.getString(5))
         }
         return out
     }

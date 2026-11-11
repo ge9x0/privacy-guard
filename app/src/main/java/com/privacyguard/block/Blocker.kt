@@ -28,6 +28,12 @@ object Blocker {
     fun setTrackers(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("trackers", v).apply()
 
     fun apps(ctx: Context): Set<String> = p(ctx).getStringSet("apps", emptySet())!!.toSet()
+    /** Interneti lejohet vetem kur app-i eshte ne ekran. */
+    fun bgApps(ctx: Context): Set<String> = p(ctx).getStringSet("bgapps", emptySet())!!.toSet()
+    fun setBgApp(ctx: Context, pkg: String, blocked: Boolean) = edit(ctx, "bgapps", pkg, blocked)
+    /** Domene qe perdoruesi i lejoi edhe pse nje liste i bllokon (false positive). */
+    fun allowed(ctx: Context): Set<String> = p(ctx).getStringSet("allow", emptySet())!!.toSet()
+    fun setAllowed(ctx: Context, host: String, v: Boolean) = edit(ctx, "allow", host.lowercase().trimEnd('.'), v)
     fun hosts(ctx: Context): Set<String> = p(ctx).getStringSet("hosts", emptySet())!!.toSet()
     fun setApp(ctx: Context, pkg: String, blocked: Boolean) = edit(ctx, "apps", pkg, blocked)
     fun setHost(ctx: Context, host: String, blocked: Boolean) = edit(ctx, "hosts", host.lowercase().trimEnd('.'), blocked)
@@ -43,19 +49,46 @@ object Blocker {
         ctx.packageManager.getPackagesForUid(uid)?.toList().orEmpty()
     }
 
+    /** Domene qe nuk duhen prekur kurre: kontrolli i lidhjes, ora, njoftimet push. */
+    private val essential = setOf(
+        "connectivitycheck.gstatic.com", "connectivitycheck.android.com", "clients3.google.com", "time.android.com",
+        "mtalk.google.com", "android.clients.google.com", "play.googleapis.com",
+    )
+
     /** Arsyeja e bllokimit, ose null nese kerkesa lejohet. Thirret per cdo kerkese DNS. */
     fun dnsVerdict(ctx: Context, uid: Int, host: String): String? {
         val h = host.lowercase().trimEnd('.')
+        val sx = suffixes(h)
         val hs = hosts(ctx)
-        if (hs.isNotEmpty() && suffixes(h).any { it in hs }) return "domen"
-        if (uid < 0) return null                      // pa app te njohur: vetem domenet e zgjedhura
-        val pk = pkgsOf(ctx, uid)
-        val ap = apps(ctx)
-        if (ap.isNotEmpty() && pk.any { it in ap }) return "app"
+        if (hs.isNotEmpty() && sx.any { it in hs }) return "domain"
+        val al = allowed(ctx)
+        if (al.isNotEmpty() && sx.any { it in al }) return null
+        if (h in essential) return null
+        val pk = if (uid >= 0) pkgsOf(ctx, uid) else emptyList()
+        if (uid >= 0) {
+            val ap = apps(ctx)
+            if (ap.isNotEmpty() && pk.any { it in ap }) return "app"
+            val bg = bgApps(ctx)
+            if (bg.isNotEmpty() && pk.any { it in bg } && ForegroundApp.current(ctx) !in pk) return "background"
+        }
+        // Facebook/Instagram/WhatsApp... nuk prishen: permbajtja dhe serverat e vete app-it lejohen gjithmone
+        if (pk.any { Trackers.ownOrContent(h, it) } || Trackers.isContent(h)) return null
         // app-et e sistemit (uid < 10000) nuk preken; per uid te ndare, bllokohet vetem
         // nese asnjeri nga app-et e tij nuk e ka domenin si te vetin
         if (trackersOn(ctx) && uid >= 10000 && pk.isNotEmpty() && pk.all { Trackers.blockable(h, it) }) return "tracker"
+        FilterLists.match(ctx, h)?.let { return "list:$it" }
         return null
+    }
+
+    /** Teksti per perdoruesin per arsyen e ruajtur ne conn.why. */
+    fun reasonLabel(why: String?): String = when {
+        why == null -> ""
+        why == "domain" -> "blocked domain"
+        why == "app" -> "app's internet blocked"
+        why == "background" -> "background internet blocked"
+        why == "tracker" -> "third-party tracker"
+        why.startsWith("list:") -> FilterLists.nameOf(why.removePrefix("list:")) + " list"
+        else -> why
     }
 
     private fun suffixes(h: String): List<String> {

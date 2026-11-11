@@ -21,9 +21,21 @@ class TimingReceiver : BroadcastReceiver() {
             try {
                 var t = System.currentTimeMillis()
                 fun lap(n: String) { val now = System.currentTimeMillis(); Log.i("PG.Time", "$n ${now - t} ms"); t = now }
+                if (intent.getBooleanExtra("lists", false)) {
+                    Log.i("PG.Time", com.privacyguard.block.FilterLists.update(ctx, force = true)); lap("lists update")
+                    for (h in listOf("t.appsflyersdk.com", "graph.facebook.com", "i.instagram.com", "googleads.g.doubleclick.net", "www.google.com"))
+                        Log.i("PG.Time", "verdict uid=10319(instagram?) $h -> ${com.privacyguard.block.Blocker.dnsVerdict(ctx, 10319, h)}")
+                    lap("verdicts")
+                    com.privacyguard.apps.UserApps.list(ctx).let { l -> Log.i("PG.Time", "sdk scan ${l.size} apps, with sdks: " +
+                        l.count { com.privacyguard.apps.SdkScanner.of(ctx, it).isNotEmpty() }) }; lap("sdk scan")
+                    Log.i("PG.Time", "advice ${com.privacyguard.apps.PermissionAdvisor.advise(ctx).size}"); lap("advisor")
+                    Log.i("PG.Time", "scores " + com.privacyguard.apps.Score.compute(ctx).take(5).joinToString { "${it.pkg}=${it.score}" }); lap("scores")
+                }
                 Collector.snapshot(ctx); lap("snapshot total")
                 Shell.mode(ctx, tryConnect = true); lap("mode")
-                Analyzer(ctx).build(LocalDate.now()); lap("analyzer")
+                val d = Analyzer(ctx).build(LocalDate.now()); lap("analyzer")
+                d.alerts.filter { it.sev == com.privacyguard.core.Sev.HIGH }.groupingBy { "${it.e.pkg} ${it.e.op} ${it.e.state}" }.eachCount()
+                    .forEach { (k, n) -> Log.i("PG.Time", "HIGH $n $k") }
             } finally { pending.finish() }
         }
     }

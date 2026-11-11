@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +35,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -67,6 +69,7 @@ import com.privacyguard.collect.Mode
 import com.privacyguard.collect.Shell
 import com.privacyguard.core.Analyzer
 import com.privacyguard.core.DayReport
+import com.privacyguard.core.Sev
 import com.privacyguard.core.fmtBytes
 import com.privacyguard.core.fmtDur
 import com.privacyguard.monitor.MonitorService
@@ -109,6 +112,7 @@ private fun Home() {
     var manual by remember { mutableStateOf<Pair<String, Blocker.Result.Manual>?>(null) }
     var blockTick by remember { mutableIntStateOf(0) }
     var setupOpen by remember { mutableStateOf<Boolean?>(null) }
+    var tab by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refresh) {
         withContext(Dispatchers.IO) {
@@ -158,8 +162,9 @@ private fun Home() {
     val stepsDone = listOf(usage, full, monitor, vpn).count { it }
     val showSetup = setupOpen ?: (mode != null && stepsDone < 4)
 
+    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
     Column(
-        Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // ---------------- header
@@ -187,7 +192,12 @@ private fun Home() {
         // ---------------- today
         val d = today
         if (d == null) Text("Loading today's data…", fontSize = 13.sp)
-        else {
+        else if (tab == 1) {
+            AllActivityCard(d)
+            DnsLogCard(d, blockTick, vpn, onHost = ::blockHost, onAllow = { h -> Blocker.setAllowed(ctx, h, true); Blocker.setHost(ctx, h, false); blockTick++; msg = "$h allowed." })
+        } else if (tab == 2) {
+            AppsTab(blockTick, busy == null, onWork = { l, b -> work(l, b) }, onManual = { pkg, r -> manual = pkg to r }, onChange = { blockTick++ })
+        } else if (tab == 0) {
             KpiGrid(d)
             Actions(busy == null,
                 onCollect = { work("Collecting") { val r = Collector.snapshot(ctx); "Collected ${r.accessNew} new access records (${r.mode.label}). ${r.note ?: ""}" } },
@@ -212,6 +222,10 @@ private fun Home() {
         }
 
         // ---------------- blocking
+        if (tab == 3) {
+        FilterListsCard(vpn, blockTick, busy == null, onChange = { blockTick++ },
+            onUpdate = { work("Downloading block lists") { com.privacyguard.block.FilterLists.update(ctx, force = true) } })
+        BgBlockCard(blockTick, onChange = { blockTick++ })
         BlockSection(vpn, blockTick, onChange = { blockTick++ }, onRestore = { key ->
             work("Restoring") {
                 when (val r = Blocker.restore(ctx, key)) {
@@ -220,8 +234,10 @@ private fun Home() {
                 }
             }
         })
+        }
 
         // ---------------- setup (collapsed)
+        if (tab == 0) {
         SectionCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -291,7 +307,15 @@ private fun Home() {
         }
         Text("A report is created automatically every night at 23:50 and saved to Download/PrivacyGuard.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Spacer(Modifier.height(24.dp))
+    }
+    androidx.compose.material3.NavigationBar {
+        for ((i, pair) in listOf("Today" to "◉", "Activity" to "≡", "Apps" to "▦", "Blocking" to "⛨").withIndex()) {
+            NavigationBarItem(selected = tab == i, onClick = { tab = i },
+                icon = { Text(pair.second, fontSize = 18.sp) }, label = { Text(pair.first) })
+        }
+    }
     }
 }
 
@@ -358,8 +382,8 @@ private fun Toggle(on: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun KpiGrid(d: DayReport) {
     val items = listOf(
-        Triple("${d.crit}", "Critical", if (d.crit > 0) RED else null),
-        Triple("${d.high}", "High", if (d.high > 0) ORANGE else null),
+        Triple("${d.cases(Sev.CRIT)}", "Critical" + if (d.crit > d.cases(Sev.CRIT)) " (${d.crit} events)" else "", if (d.crit > 0) RED else null),
+        Triple("${d.cases(Sev.HIGH)}", "High" + if (d.high > d.cases(Sev.HIGH)) " (${d.high} events)" else "", if (d.high > 0) ORANGE else null),
         Triple("${d.trk}", "Tracker requests", if (d.trk > 0) ORANGE else null),
         Triple("${d.micN}×", "Microphone · ${fmtDur(d.micMs)}", null),
         Triple("${d.camN}×", "Camera · ${fmtDur(d.camMs)}", null),
@@ -583,6 +607,258 @@ private fun FlowsCard(d: DayReport) {
                 .joinToString { (tr, u) -> "${tr.company} (${tr.category}) ×${u.count}" }, fontSize = 12.sp)
             for (l in f.links) Text("• ${t(l.ts)} ${l.what} → ${l.company} after ${fmtDur(l.afterMs)} (${l.host})",
                 fontSize = 12.sp, color = RED)
+        }
+    }
+}
+
+// ======================================================================== Activity tab
+
+private val groupOrder = listOf(
+    "mic" to "Microphone", "cam" to "Camera", "loc" to "Location", "personal" to "Contacts & personal data",
+    "clip" to "Clipboard", "media" to "Photos & files", "call" to "Calls",
+)
+
+@Composable
+private fun AllActivityCard(d: DayReport) {
+    val ctx = LocalContext.current
+    val an = remember { Analyzer(ctx).names }
+    var sel by remember { mutableStateOf<String?>(null) }
+    val byGroup = d.usage.entries.filter { it.value.count > 0 || it.value.reject > 0 }.groupBy { it.key.third }
+    SectionCard {
+        Title("All activity today")
+        Hint("Every access by every app, on screen or not, grouped by what was used.")
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            androidx.compose.material3.FilterChip(sel == null, { sel = null }, label = { Text("All") })
+            for ((g, l) in groupOrder) if (byGroup[g] != null)
+                androidx.compose.material3.FilterChip(sel == g, { sel = g }, label = { Text("$l ${byGroup[g]!!.sumOf { it.value.count }}") })
+        }
+        if (byGroup.isEmpty()) Text("Nothing recorded yet today.", fontSize = 13.sp)
+        for ((g, label) in groupOrder) {
+            val rows = byGroup[g] ?: continue
+            if (sel != null && sel != g) continue
+            Text(label, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
+            for ((k, u) in rows.sortedByDescending { it.value.count }.take(if (sel == null) 6 else 50)) {
+                HorizontalDivider(Modifier.padding(vertical = 2.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(an.name(k.first), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Hint(k.second + (if (u.first > 0) " · ${hmOf(u.first)}–${hmOf(u.last)}" else "") +
+                            (if (u.ms > 0) " · ${fmtDur(u.ms)}" else ""))
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("${u.count}×", fontWeight = FontWeight.Bold)
+                        if (u.bg > 0) Text("${u.bg} off screen", fontSize = 11.sp, color = ORANGE)
+                        if (u.reject > 0) Text("${u.reject} refused", fontSize = 11.sp, color = GREEN)
+                    }
+                }
+            }
+            if (sel == null && rows.size > 6) TextButton(onClick = { sel = g }) { Text("Show all ${rows.size}") }
+        }
+    }
+}
+
+private fun hmOf(ts: Long) = java.time.Instant.ofEpochMilli(ts).atZone(java.time.ZoneId.systemDefault())
+    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+
+@Composable
+private fun DnsLogCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String) -> Unit, onAllow: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val an = remember { Analyzer(ctx).names }
+    val blockedHosts = remember(tick) { Blocker.hosts(ctx) }
+    var onlyFlagged by remember { mutableStateOf(true) }
+    var q by remember { mutableStateOf("") }
+    val rows = d.dns.filter { (!onlyFlagged || it.kind != null || it.blocked > 0) &&
+        (q.isBlank() || it.host.contains(q, true) || an.name(it.pkg).contains(q, true)) }
+    SectionCard {
+        Title("DNS log")
+        Hint("Every server name apps asked for today. Flagged: known trackers, block-list hits, and names with tracking keywords (analytics, telemetry, pixel…).")
+        if (!d.hasConnData) { Hint(if (vpn) "No requests recorded yet." else "Turn on the local VPN in Setup to record this."); return@SectionCard }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            androidx.compose.material3.FilterChip(onlyFlagged, { onlyFlagged = true }, label = { Text("Flagged ${d.dns.count { it.kind != null || it.blocked > 0 }}") })
+            androidx.compose.material3.FilterChip(!onlyFlagged, { onlyFlagged = false }, label = { Text("All ${d.dns.size}") })
+        }
+        OutlinedTextField(q, { q = it }, label = { Text("Search app or server") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        for (e in rows.take(80)) {
+            HorizontalDivider(Modifier.padding(vertical = 2.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(e.host, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                    Hint("${an.name(e.pkg)} · ${e.count}× · last ${hmOf(e.last)}")
+                    val tag = when {
+                        e.tracker != null -> "${e.tracker.company} · ${e.tracker.category}" to RED
+                        e.list != null -> "On block list: ${com.privacyguard.block.FilterLists.nameOf(e.list)}" to ORANGE
+                        e.keyword != null -> "Keyword: “${e.keyword}”" to ORANGE
+                        else -> null
+                    }
+                    tag?.let { Text(it.first, fontSize = 11.sp, color = it.second) }
+                    if (e.blocked > 0) Text("Blocked ${e.blocked}× (${Blocker.reasonLabel(e.why)})", fontSize = 11.sp, color = GREEN)
+                }
+                if (e.blocked > 0 && e.host !in blockedHosts) TextButton(onClick = { onAllow(e.host) }) { Text("Allow", fontSize = 12.sp) }
+                else if (e.host !in blockedHosts) TextButton(onClick = { onHost(e.host) }) { Text("Block", fontSize = 12.sp) }
+                else Chip("Blocked", RED, small = true)
+            }
+        }
+        if (rows.size > 80) Hint("Showing 80 of ${rows.size}. Search to narrow it down.")
+    }
+}
+
+// ======================================================================== Apps tab
+
+private class AppsData(
+    val scores: List<com.privacyguard.apps.Score.S>,
+    val sdks: List<Pair<String, List<com.privacyguard.apps.SdkScanner.Sdk>>>,
+    val advice: List<com.privacyguard.apps.PermissionAdvisor.Advice>,
+)
+
+@Composable
+private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> String?) -> Unit,
+                    onManual: (String, Blocker.Result.Manual) -> Unit, onChange: () -> Unit) {
+    val ctx = LocalContext.current
+    val an = remember { Analyzer(ctx).names }
+    var data by remember { mutableStateOf<AppsData?>(null) }
+    LaunchedEffect(tick) {
+        data = withContext(Dispatchers.IO) {
+            val apps = com.privacyguard.apps.UserApps.list(ctx)
+            AppsData(
+                com.privacyguard.apps.Score.compute(ctx),
+                apps.map { it.packageName to com.privacyguard.apps.SdkScanner.of(ctx, it) }.filter { it.second.isNotEmpty() }
+                    .sortedByDescending { it.second.size },
+                com.privacyguard.apps.PermissionAdvisor.advise(ctx),
+            )
+        }
+    }
+    val bg = remember(tick) { Blocker.bgApps(ctx) }
+    val revoked = remember(tick) { com.privacyguard.apps.PermissionAdvisor.revoked(ctx) }
+    val dd = data
+    if (dd == null) { Banner("Scanning installed apps…", MaterialTheme.colorScheme.primary); return }
+    var allScores by remember { mutableStateOf(false) }
+    SectionCard {
+        Title("Privacy score · last 7 days")
+        Hint("100 is clean. Points are lost for alerts, tracker companies contacted, tracker SDKs inside and heavy background uploads.")
+        for (s in if (allScores) dd.scores else dd.scores.take(10)) {
+            HorizontalDivider(Modifier.padding(vertical = 2.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(48.dp)) { Chip("${s.score}", when { s.score < 50 -> RED; s.score < 80 -> ORANGE; else -> GREEN }) }
+                Column(Modifier.weight(1f)) {
+                    Text(an.name(s.pkg), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Hint(listOfNotNull(
+                        s.crit.takeIf { it > 0 }?.let { "$it critical" }, s.high.takeIf { it > 0 }?.let { "$it high" },
+                        s.companies.size.takeIf { it > 0 }?.let { "$it tracker companies" }, s.sdks.takeIf { it > 0 }?.let { "$it SDKs" },
+                        s.bgMb.takeIf { it > 0 }?.let { "$it MB in background" },
+                    ).joinToString(" · ").ifEmpty { "Nothing suspicious" })
+                }
+                val on = s.pkg in bg
+                TextButton(onClick = { Blocker.setBgApp(ctx, s.pkg, !on); onChange() }) {
+                    Text(if (on) "Bg net: off" else "Limit net", fontSize = 11.sp, color = if (on) RED else MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        if (dd.scores.size > 10) TextButton(onClick = { allScores = !allScores }) { Text(if (allScores) "Show less" else "Show all ${dd.scores.size}") }
+        Hint("“Limit net” lets the app use the internet only while it is on screen.")
+    }
+
+    SectionCard {
+        Title("Tracker SDKs inside apps")
+        Hint("Found in each app's code manifest, like Exodus Privacy does. An SDK inside does not mean it is active, but it can send data whenever the app runs.")
+        if (dd.sdks.isEmpty()) Text("No known tracker SDKs found.", fontSize = 13.sp, color = GREEN)
+        for ((pkg, list) in dd.sdks.take(25)) {
+            HorizontalDivider(Modifier.padding(vertical = 2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(an.name(pkg), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Chip("${list.size}", if (list.size >= 5) RED else ORANGE, small = true)
+            }
+            Hint(list.joinToString { it.name })
+        }
+    }
+
+    SectionCard {
+        Title("Permission advisor")
+        Hint("Permissions an app holds but has not used, or that do not fit the kind of app. Removing one is safe: the app asks again if it needs it.")
+        var weak by remember { mutableStateOf(false) }
+        val strong = dd.advice.filter { it.strong }
+        val shown = if (weak) dd.advice else strong
+        if (shown.isEmpty()) Text("Nothing clear to suggest yet.", fontSize = 13.sp, color = GREEN)
+        for (a in shown.take(40)) {
+            HorizontalDivider(Modifier.padding(vertical = 2.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${an.name(a.pkg)} · ${a.group.label}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(a.reason, fontSize = 12.sp, color = if (a.strong) ORANGE else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(enabled = enabled, onClick = {
+                    onWork("Removing permission") {
+                        when (val r = com.privacyguard.apps.PermissionAdvisor.revoke(ctx, a)) {
+                            is Blocker.Result.Manual -> { onManual(a.pkg, r); null }
+                            is Blocker.Result.Done -> { onChange(); r.msg }
+                        }
+                    }
+                }) { Text("Remove", fontSize = 12.sp) }
+            }
+        }
+        val nWeak = dd.advice.size - strong.size
+        if (nWeak > 0) TextButton(onClick = { weak = !weak }) {
+            Text(if (weak) "Hide permissions that just haven't been used yet" else "Show $nWeak more (not used yet, still watching)")
+        }
+        if (revoked.isNotEmpty()) { HorizontalDivider(); Text("Removed by you", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+        for (k in revoked.keys) Row(verticalAlignment = Alignment.CenterVertically) {
+            val g = com.privacyguard.apps.PermGroups.all.firstOrNull { it.id == k.substringAfter('|') }?.label ?: k.substringAfter('|')
+            Text("${an.name(k.substringBefore('|'))} · $g", fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = {
+                onWork("Restoring permission") {
+                    when (val r = com.privacyguard.apps.PermissionAdvisor.restore(ctx, k)) {
+                        is Blocker.Result.Manual -> { onManual(k.substringBefore('|'), r); null }
+                        is Blocker.Result.Done -> { onChange(); r.msg }
+                    }
+                }
+            }) { Text("Give back", fontSize = 12.sp) }
+        }
+    }
+}
+
+// ======================================================================== Blocking tab
+
+@Composable
+private fun FilterListsCard(vpn: Boolean, tick: Int, enabled: Boolean, onChange: () -> Unit, onUpdate: () -> Unit) {
+    val ctx = LocalContext.current
+    val fl = com.privacyguard.block.FilterLists
+    SectionCard {
+        Title("Block lists (like uBlock Origin)")
+        Hint("Blocks ads, trackers and dangerous sites for every app, at the DNS level. Facebook, Instagram, WhatsApp and every app's own servers are never blocked by a list. Lists update weekly.")
+        if (!vpn) Banner("Lists work through the local VPN, which is off. Turn it on in Today → Setup → step 4.", ORANGE)
+        for (d in fl.all) {
+            val on = remember(tick) { fl.enabled(ctx, d.id) }
+            HorizontalDivider(Modifier.padding(vertical = 2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(d.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Hint(d.desc)
+                    val n = remember(tick) { fl.count(ctx, d.id) }
+                    val t = remember(tick) { fl.updatedAt(ctx, d.id) }
+                    Text(if (n > 0) "${"%,d".format(n)} domains · updated " + java.time.Instant.ofEpochMilli(t).atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm")) else "Not downloaded yet",
+                        fontSize = 11.sp, color = if (n > 0) GREEN else ORANGE)
+                }
+                Switch(checked = on, onCheckedChange = { fl.setEnabled(ctx, d.id, it); onChange(); if (it && fl.count(ctx, d.id) == 0) onUpdate() })
+            }
+        }
+        remember(tick) { fl.lastError(ctx) }?.let { Text("Last update problem: $it", fontSize = 11.sp, color = RED) }
+        OutlinedButton(onClick = onUpdate, enabled = enabled) { Text("Update lists now") }
+        Hint("Something stopped working? Open Activity → DNS log, find the blocked server and tap Allow.")
+    }
+}
+
+@Composable
+private fun BgBlockCard(tick: Int, onChange: () -> Unit) {
+    val ctx = LocalContext.current
+    val an = remember { Analyzer(ctx).names }
+    val bg = remember(tick) { Blocker.bgApps(ctx).sorted() }
+    SectionCard {
+        Title("Internet only while open")
+        Hint("These apps cannot reach the internet when they are not on screen. Add apps from the Apps tab (Limit net). Music or navigation apps would stop in the background.")
+        if (bg.isEmpty()) Text("No apps limited.", fontSize = 13.sp)
+        for (p in bg) Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(an.name(p), fontSize = 13.sp, modifier = Modifier.weight(1f))
+            TextButton(onClick = { Blocker.setBgApp(ctx, p, false); onChange() }) { Text("Remove", fontSize = 12.sp) }
         }
     }
 }

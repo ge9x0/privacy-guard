@@ -77,6 +77,15 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** App i ri i instaluar -> skano SDK-te dhe lejet, njofto. */
+    private val installReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            if (i.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
+            val pkg = i.data?.schemeSpecificPart ?: return
+            worker.post { runCatching { com.privacyguard.apps.Insights.onInstalled(this@MonitorService, pkg) } }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         db = Db.get(this)
@@ -90,6 +99,9 @@ class MonitorService : Service() {
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
         }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // sistemi e dergon vetem ai (broadcast i mbrojtur)
+        ContextCompat.registerReceiver(this, installReceiver, IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") },
+            ContextCompat.RECEIVER_EXPORTED)
         getSystemService(AudioManager::class.java).registerAudioRecordingCallback(recCb, worker)
         getSystemService(CameraManager::class.java).registerAvailabilityCallback(camCb, worker)
         worker.post {
@@ -111,6 +123,7 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenReceiver) }
+        runCatching { unregisterReceiver(installReceiver) }
         getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(recCb)
         getSystemService(CameraManager::class.java).unregisterAvailabilityCallback(camCb)
         thread.quitSafely()

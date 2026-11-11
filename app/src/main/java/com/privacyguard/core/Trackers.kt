@@ -157,6 +157,32 @@ object Trackers {
         "graph.facebook.com", "an.facebook.com", "connect.facebook.net", "pixel.facebook.com", "analytics.tiktok.com",
     )
 
+    fun isContent(host: String) = suffixes(host).let { s -> s.none { it in trackingEndpoints } && s.any { it in content } }
+
+    /**
+     * Serverat e vete app-it: "instagram.com" per com.instagram.android, "whatsapp.net" per com.whatsapp.
+     * Pikat e gjurmimit (graph.facebook.com brenda nje app-i tjeter) nuk llogariten si te vetat.
+     */
+    fun ownOrContent(host: String, pkg: String): Boolean {
+        val s = suffixes(host)
+        val t = classify(host)
+        if (t != null && isFirstParty(t, pkg)) return true
+        val reg = s.lastOrNull { it.count { c -> c == '.' } == 1 } ?: return false
+        val label = reg.substringBefore('.')
+        return label.length >= 4 && pkg.split('.').any { it == label }
+    }
+
+    /** Fjale qe tregojne gjurmim ne emrat e serverave qe s'jane ende ne liste. */
+    private val keywords = listOf(
+        "analytics", "telemetry", "tracking", "tracker", "metrics", "adservice", "adserver", "doubleclick", "pixel",
+        "beacon", "crashlytics", "appmeasurement", "app-measurement", "adsdk", "ads.", "ad.", "stats.", "events.",
+        "collect", "log.", "logs.", "logging", "sdk.", "attribution", "insights", "fingerprint", "measure",
+    )
+    fun keyword(host: String): String? {
+        val h = host.lowercase()
+        return keywords.firstOrNull { k -> if (k.endsWith('.')) h.startsWith(k) || h.contains(".$k") else h.contains(k) }?.trimEnd('.')
+    }
+
     private fun suffixes(host: String): List<String> {
         val p = host.lowercase().trimEnd('.').split('.')
         return (0 until p.size - 1).map { p.subList(it, p.size).joinToString(".") }

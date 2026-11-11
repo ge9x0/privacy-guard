@@ -100,5 +100,21 @@ object Scheduler {
                 .setInitialDelay(Duration.between(now, next).toMinutes(), TimeUnit.MINUTES)
                 .build(),
         )
+        // listat e bllokimit: cdo jave, vetem me internet
+        wm.enqueueUniquePeriodicWork(
+            "filter-lists", ExistingPeriodicWorkPolicy.KEEP,
+            PeriodicWorkRequestBuilder<com.privacyguard.apps.FilterUpdateWorker>(7, TimeUnit.DAYS)
+                .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build())
+                .build(),
+        )
+        // pikët e javës: e diel 20:00
+        var sun = now.toLocalDate().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)).atTime(20, 0)
+        if (!sun.isAfter(now)) sun = sun.plusWeeks(1)
+        wm.enqueueUniquePeriodicWork(
+            "weekly-score", ExistingPeriodicWorkPolicy.UPDATE,
+            PeriodicWorkRequestBuilder<com.privacyguard.apps.WeeklyScoreWorker>(7, TimeUnit.DAYS)
+                .setInitialDelay(Duration.between(now, sun).toMinutes(), TimeUnit.MINUTES)
+                .build(),
+        )
     }
 }

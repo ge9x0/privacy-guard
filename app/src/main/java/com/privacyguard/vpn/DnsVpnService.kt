@@ -87,6 +87,10 @@ class DnsVpnService : VpnService() {
         val db = Db.get(this)
         val cm = getSystemService(ConnectivityManager::class.java)
         watchUpstream(cm)
+        // hera e pare: shkarko listat e bllokimit (ne sfond, me internet)
+        androidx.work.WorkManager.getInstance(this).enqueueUniqueWork("filter-lists-now", androidx.work.ExistingWorkPolicy.KEEP,
+            androidx.work.OneTimeWorkRequestBuilder<com.privacyguard.apps.FilterUpdateWorker>()
+                .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build()).build())
         thread(name = "pg-dns") {
             val buf = ByteArray(32767)
             while (running) {
@@ -107,7 +111,7 @@ class DnsVpnService : VpnService() {
                 pool.execute {
                     val why = runCatching { Blocker.dnsVerdict(this, uid, q.name) }.getOrNull()
                     val nx = if (why != null) Packets.nxdomain(pkt, q) else null
-                    runCatching { db.addConn(ConnRow(ts, uid, q.name, q.payloadLen.toLong(), blocked = nx != null)) }
+                    runCatching { db.addConn(ConnRow(ts, uid, q.name, q.payloadLen.toLong(), blocked = nx != null, why = why)) }
                     if (nx != null) {
                         Log.d(TAG, "bllokuar ($why) uid=$uid ${q.name}")
                         runCatching { synchronized(output) { output.write(Packets.buildUdpReply(q, nx, nx.size)) } }
