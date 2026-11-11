@@ -63,6 +63,8 @@ class VpnTile : TileService() {
         t.updateTile()
     }
 
+    // Android 14+ uses the PendingIntent overload; the Intent one only runs on older versions.
+    @android.annotation.SuppressLint("StartActivityAndCollapseDeprecated")
     override fun onClick() {
         if (DnsVpnService.isRunning) {
             DnsVpnService.stop(this); Prefs.setVpn(this, false); refresh(false)
