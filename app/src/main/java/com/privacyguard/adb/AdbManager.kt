@@ -18,9 +18,9 @@ import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 
 /**
- * Lidhja ADB e app-it me vete telefonin (Wireless debugging), si LADB/Shizuku.
- * Celesi krijohet nje here dhe ruhet ne dosjen private te app-it; telefoni e
- * mban mend pas ciftimit, keshtu qe lidhjet e mevonshme s'kerkojne kod.
+ * The app's own ADB connection to the phone (Wireless debugging), like LADB/Shizuku.
+ * The key is created once and stored in the app's private folder; the phone
+ * remembers it after pairing, so later connections need no code.
  */
 class AdbManager private constructor(ctx: Context) : AbsAdbConnectionManager() {
     private val keyFile = File(ctx.filesDir, "adb_key.pk8")

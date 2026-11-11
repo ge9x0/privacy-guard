@@ -8,12 +8,12 @@ import com.privacyguard.adb.AdbManager
 import java.util.concurrent.TimeUnit
 
 /**
- * Tre menyrat e qasjes:
- *  DIRECT  - app-i ka lejen DUMP (dhene me "pm grant", nga kompjuteri ose nga vete app-i)
- *            dhe ekzekuton "dumpsys" vete. Mbetet edhe pas restartimit.
- *  ADB     - app-i lidhet me vete telefonin me Wireless debugging dhe ekzekuton
- *            komandat si "shell" (si ADB nga kompjuteri).
- *  LIMITED - asnjera s'eshte aktive: vetem callback-et e kameres/mikrofonit.
+ * Three access levels:
+ *  DIRECT  - the app holds the DUMP permission (granted with "pm grant", from a computer or by the app itself)
+ *            and runs "dumpsys" itself. Survives restarts.
+ *  ADB     - the app connects to the phone itself over Wireless debugging and runs
+ *            commands as "shell" (like ADB from a computer).
+ *  LIMITED - neither is active: only the camera/microphone callbacks.
  */
 enum class Mode(val label: String, val desc: String) {
     DIRECT("Full access (permanent)", "Full history is read directly, also after a restart."),
@@ -28,7 +28,7 @@ object Shell {
     fun hasDump(ctx: Context) =
         ctx.checkSelfPermission(Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED
 
-    /** Menyra qe funksionon tani (provon edhe lidhjen ADB). */
+    /** The level that works right now (also tries the ADB connection). */
     fun mode(ctx: Context, tryConnect: Boolean = true): Mode = when {
         hasDump(ctx) && directWorks() -> Mode.DIRECT
         adbConnected(ctx, tryConnect) -> Mode.ADB
@@ -39,7 +39,7 @@ object Shell {
 
     private fun directWorks(): Boolean = directOk ?: run {
         val out = runCatching { direct(listOf("dumpsys", "appops", "--op", "RECORD_AUDIO"), 20) }.getOrDefault("")
-        // nese Samsung/SELinux e bllokon, del "Permission Denial" ose bosh
+        // if Samsung/SELinux blocks it, the output is "Permission Denial" or empty
         (out.length > 50 && !out.contains("Permission Denial")).also { directOk = it }
     }
 
@@ -67,8 +67,8 @@ object Shell {
             val ins = stream.openInputStream()
             val buf = ByteArray(8192)
             while (true) {
-                // libadb 3.1.1: kur telefoni e mbyll stream-in pa dalje (p.sh. "pm grant" i suksesshem),
-                // read() hedh IOException("Stream closed.") ne vend te -1. Ky eshte fundi normal.
+                // libadb 3.1.1: when the phone closes the stream without output (e.g. a successful "pm grant"),
+                // read() throws IOException("Stream closed.") instead of returning -1. That is the normal end.
                 val n = try { ins.read(buf) } catch (e: java.io.IOException) { if (stream.isClosed) break else throw e }
                 if (n < 0) break
                 out.write(buf, 0, n)
@@ -79,7 +79,7 @@ object Shell {
         return out.toString(Charsets.UTF_8.name())
     }
 
-    /** Ekzekuton nje komande me menyren me te mire qe kemi; null nese s'kemi asnje. */
+    /** Runs a command with the best level we have; null if we have none. */
     fun run(ctx: Context, cmd: String, mode: Mode = mode(ctx)): String? = runCatching {
         when (mode) {
             Mode.DIRECT -> direct(cmd.split(' ').filter { it.isNotBlank() })
@@ -89,18 +89,18 @@ object Shell {
     }.onFailure { Log.w(TAG, "run $cmd", it) }.getOrNull()
 
     /**
-     * Pas lidhjes me Wireless debugging: app-i i jep vetes lejet qe i duhen.
-     * Nese Samsung i pranon, menyra DIRECT mbetet pergjithmone dhe Wireless
-     * debugging nuk duhet me.
+     * After connecting with Wireless debugging the app grants itself the permissions it needs.
+     * If the system accepts them, DIRECT mode stays permanently and Wireless
+     * debugging is no longer needed.
      */
     fun selfGrant(ctx: Context): String {
         val cmds = listOf(
             "pm grant $SELF android.permission.DUMP",
             "pm grant $SELF android.permission.GET_APP_OPS_STATS",
-            // Android 17: "dumpsys appops" kerkon edhe kete leje (jo vetem app-op-in GET_USAGE_STATS)
+            // Android 17: "dumpsys appops" also needs this permission (not only the GET_USAGE_STATS app-op)
             "pm grant $SELF android.permission.PACKAGE_USAGE_STATS",
             "appops set $SELF GET_USAGE_STATS allow",
-            // Android-i e mban historikun e qasjeve 7 dite ne vend te 1
+            // keep the access history for 7 days instead of 1
             "device_config put privacy discrete_history_cutoff_millis 604800000",
         )
         val log = StringBuilder()
@@ -113,7 +113,7 @@ object Shell {
     }
 }
 
-/** Kush po perdor mikrofonin/kameren tani (vetem ne menyrat e plota). */
+/** Who is using the microphone/camera right now (full levels only). */
 object LiveAttribution {
     fun who(ctx: Context, isMic: Boolean, mode: Mode): Set<String> {
         val cmd = if (isMic) "dumpsys audio" else "dumpsys media.camera"

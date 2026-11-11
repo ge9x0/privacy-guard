@@ -5,7 +5,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.PowerManager
 
-/** Cili app eshte ne ekran tani (nga UsageStats). null kur ekrani eshte i fikur. Thirret nga VPN-ja. */
+/** Which app is on screen now (from UsageStats). null when the screen is off. Called by the VPN. */
 object ForegroundApp {
     @Volatile private var pkg: String? = null
     @Volatile private var lastQuery = 0L
@@ -22,7 +22,7 @@ object ForegroundApp {
             val e = UsageEvents.Event()
             while (ev.hasNextEvent()) {
                 ev.getNextEvent(e)
-                // app-i i fundit qe erdhi ne ekran; kur kalon te launcher-i, ai behet "ne ekran"
+                // the last app that came on screen; when going to the launcher, that becomes "on screen"
                 if (e.eventType == UsageEvents.Event.ACTIVITY_RESUMED) pkg = e.packageName
             }
         }

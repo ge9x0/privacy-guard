@@ -27,7 +27,7 @@ import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 
 object Reports {
-    /** Krijon PDF-ne per ditet e dhena dhe e ruan te Download/PrivacyGuard. */
+    /** Creates the PDF for the given days and saves it to Download/PrivacyGuard. */
     fun create(ctx: Context, days: List<LocalDate>, fileName: String): Uri? {
         val an = Analyzer(ctx)
         val reports = days.map { an.build(it) }
@@ -38,7 +38,7 @@ object Reports {
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PrivacyGuard")
         }
         val cr = ctx.contentResolver
-        // nese ekziston nje me te njejtin emer (p.sh. raporti i sotem), zevendesoje
+        // if one with the same name exists (e.g. today's report), replace it
         cr.delete(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             "${MediaStore.Downloads.DISPLAY_NAME}=? AND ${MediaStore.Downloads.RELATIVE_PATH} LIKE ?",
@@ -64,14 +64,16 @@ object Reports {
     }
 }
 
-/** Cdo 3 ore: mblidh historikun (qe te mos humbase asgje para se Android-i ta fshije). */
+/** Every 3 hours: collect the history (so nothing is lost before Android deletes it). */
 class CollectWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
     override suspend fun doWork(): Result = runCatching {
-        Collector.snapshot(applicationContext); Result.success()
+        Collector.snapshot(applicationContext)
+        com.privacyguard.widget.PrivacyWidget.update(applicationContext)
+        Result.success()
     }.getOrElse { Log.w("PG.Work", "collect", it); Result.retry() }
 }
 
-/** Cdo nate: mbledhje + PDF-ja e dites + njoftim. */
+/** Every night: collection + the day's PDF + notification. */
 class DailyReportWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
     override suspend fun doWork(): Result = runCatching {
         val ctx = applicationContext
@@ -90,7 +92,7 @@ object Scheduler {
             "collect", ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<CollectWorker>(3, TimeUnit.HOURS).build(),
         )
-        // raporti ne 23:50 cdo dite
+        // the report at 23:50 every day
         val now = LocalDateTime.now()
         var next = now.toLocalDate().atTime(23, 50)
         if (!next.isAfter(now)) next = next.plusDays(1)
@@ -100,14 +102,14 @@ object Scheduler {
                 .setInitialDelay(Duration.between(now, next).toMinutes(), TimeUnit.MINUTES)
                 .build(),
         )
-        // listat e bllokimit: cdo jave, vetem me internet
+        // block lists: weekly, only with internet
         wm.enqueueUniquePeriodicWork(
             "filter-lists", ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<com.privacyguard.apps.FilterUpdateWorker>(7, TimeUnit.DAYS)
                 .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build())
                 .build(),
         )
-        // pikët e javës: e diel 20:00
+        // weekly score: Sunday 20:00
         var sun = now.toLocalDate().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)).atTime(20, 0)
         if (!sun.isAfter(now)) sun = sun.plusWeeks(1)
         wm.enqueueUniquePeriodicWork(

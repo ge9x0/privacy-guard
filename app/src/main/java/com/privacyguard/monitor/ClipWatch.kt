@@ -6,14 +6,14 @@ import com.privacyguard.data.AccessEvent
 import com.privacyguard.core.Ops
 
 /**
- * Kush lexoi clipboard-in (tekstin e kopjuar) pa qene ne ekran. Android 10+ e lejon vetem
- * app-in ne ekran dhe tastieren; nje lexim "bg" eshte pra i rralle dhe vlen te dihet.
- * Burimi: `dumpsys appops --op READ_CLIPBOARD`, i lexuar cdo 20 s (60 s me ekran te fikur).
+ * Who read the clipboard (the copied text) while not on screen. Android 10+ only allows
+ * the app on screen and the keyboard, so a background read is rare and worth knowing.
+ * Source: `dumpsys appops --op READ_CLIPBOARD`, read every 30 s (5 min with the screen off).
  */
 object ClipWatch {
     data class Hit(val e: AccessEvent, val refused: Boolean)
 
-    /** Leximet e reja (pas `since`) jashte ekranit, pa sistemin, tastieren dhe app-in tone. */
+    /** New reads (after `since`) while off screen, excluding the system, the keyboard and our app. */
     fun newHits(events: List<AccessEvent>, since: Long, ignore: (String) -> Boolean): List<Hit> =
         events.asSequence()
             .filter { it.op == "READ_CLIPBOARD" && it.ts > since && offScreen(it.state) && !ignore(it.pkg) }
@@ -22,7 +22,7 @@ object ClipWatch {
             .sortedBy { it.e.ts }
             .toList()
 
-    /** "top" = ne ekran, "pers" = sistemi; cdo gjendje tjeter (bg, cch, fg/fgsvc sherbim) eshte jashte ekranit. */
+    /** "top" = on screen, "pers" = system; any other state (bg, cch, fg/fgsvc service) is off screen. */
     fun offScreen(state: String) = state in Ops.background || state in Ops.fgService
 
     fun ignorer(ctx: Context): (String) -> Boolean {

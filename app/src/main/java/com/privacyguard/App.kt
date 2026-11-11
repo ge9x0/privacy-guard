@@ -13,7 +13,7 @@ import org.conscrypt.Conscrypt
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
-        // TLS per ciftimin ADB
+        // TLS for ADB pairing
         runCatching { java.security.Security.insertProviderAt(Conscrypt.newProvider(), 1) }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannels(listOf(
@@ -42,7 +42,7 @@ object Prefs {
     fun setMonitor(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("monitor", v).apply()
     fun vpn(ctx: Context) = p(ctx).getBoolean("vpn", false)
     fun setVpn(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("vpn", v).apply()
-    /** "Clear history": asgje para ketij momenti nuk mblidhet me (Android-i vete mban 7 dite). */
+    /** "Clear history": nothing before this moment is collected again (Android itself keeps 7 days). */
     fun clipAlerts(ctx: Context) = p(ctx).getBoolean("clip", true)
     fun setClipAlerts(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("clip", v).apply()
     fun since(ctx: Context) = p(ctx).getLong("since", 0L)
@@ -50,7 +50,7 @@ object Prefs {
 }
 
 object History {
-    /** Fshin gjithe historikun e mbledhur; lejet, lidhja ADB dhe bllokimet mbeten. */
+    /** Deletes all collected history; permissions, the ADB connection and blocks stay. */
     fun clear(ctx: Context) {
         Prefs.setSince(ctx, System.currentTimeMillis())
         com.privacyguard.data.Db.get(ctx).clearAll()
@@ -62,7 +62,7 @@ object History {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        // Android-i e fshin firewall-in e kernelit ne restartim
+        // Android clears the kernel firewall on restart
         com.privacyguard.block.Firewall.onBoot(ctx)
         if (Prefs.vpn(ctx) && android.net.VpnService.prepare(ctx) == null) {
             com.privacyguard.vpn.DnsVpnService.start(ctx)

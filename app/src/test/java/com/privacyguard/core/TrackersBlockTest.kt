@@ -4,7 +4,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Bllokimi duhet ta ndale gjurmimin pa prishur Facebook-un, Instagram-in, WhatsApp-in etj. */
+/** Blocking must stop tracking without breaking Facebook, Instagram, WhatsApp etc. */
 class TrackersBlockTest {
     @Test
     fun metaAppsAreNeverBrokenByTheirOwnDomains() {
@@ -21,7 +21,7 @@ class TrackersBlockTest {
 
     @Test
     fun contentStaysReachableFromOtherApps() {
-        // klient i pales se trete / postim i ngulitur: foto e video duhet te ngarkohen
+        // third-party client / embedded post: photos and videos must load
         assertFalse(Trackers.blockable("i.instagram.com", "com.instaflow.android"))
         assertFalse(Trackers.blockable("scontent.cdninstagram.com", "com.example.news"))
         assertFalse(Trackers.blockable("static.xx.fbcdn.net", "com.example.news"))

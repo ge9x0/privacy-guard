@@ -6,7 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class PacketsTest {
-    /** IPv4/UDP 10.111.222.2:40000 -> 10.111.222.1:53, pyetje A per graph.facebook.com me EDNS OPT. */
+    /** IPv4/UDP 10.111.222.2:40000 -> 10.111.222.1:53, A query for graph.facebook.com with EDNS OPT. */
     private fun query(): ByteArray {
         val name = "graph.facebook.com".split('.').flatMap { listOf(it.length.toByte()) + it.toByteArray().toList() } + 0.toByte()
         val dns = byteArrayOf(0x12, 0x34, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 1) + name.toByteArray() +
@@ -28,13 +28,13 @@ class PacketsTest {
         val r = Packets.nxdomain(p, q)
         assertNotNull(r)
         r!!
-        assertEquals(12 + 20 + 4, r.size)                       // koka + emri (20 bajte) + QTYPE/QCLASS, pa OPT
+        assertEquals(12 + 20 + 4, r.size)                       // header + name (20 bytes) + QTYPE/QCLASS, without OPT
         assertEquals(0x12, r[0].toInt()); assertEquals(0x34, r[1].toInt())
         assertEquals(0x81, r[2].toInt() and 0xFF)              // QR + RD
         assertEquals(3, r[3].toInt() and 0x0F)                 // NXDOMAIN
         assertArrayEquals(byteArrayOf(0, 1, 0, 0, 0, 0, 0, 0), r.copyOfRange(4, 12))
         val reply = Packets.buildUdpReply(q, r, r.size)
-        assertEquals(53, ((reply[20].toInt() and 0xFF) shl 8) or (reply[21].toInt() and 0xFF))   // nga porta 53
+        assertEquals(53, ((reply[20].toInt() and 0xFF) shl 8) or (reply[21].toInt() and 0xFF))   // from port 53
         assertEquals(40000, ((reply[22].toInt() and 0xFF) shl 8) or (reply[23].toInt() and 0xFF))
     }
 }

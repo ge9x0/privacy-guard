@@ -11,13 +11,13 @@ import com.privacyguard.core.Trackers
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Bllokimi, ne dy shtresa:
+ * Blocking, in two layers:
  *
- *  1. DNS (perdor VPN-ne lokale): trackerat e paleve te treta, domene te zgjedhura,
- *     ose gjithe interneti i nje app-i -> pergjigje NXDOMAIN. Punon ne cdo menyre.
- *  2. Lejet (app-ops): "lejo vetem kur e perdor" per mikrofonin, kameren, kontaktet...
- *     Kerkon lidhjen ADB (Wireless debugging); perndryshe hapet faqja e app-it te Settings.
- *     Menyra e meparshme ruhet, qe "Rikthe" ta ktheje ashtu si ishte.
+ *  1. DNS (through the local VPN): third-party trackers, chosen domains,
+ *     or an app's whole internet -> NXDOMAIN answer. Works in every mode.
+ *  2. Permissions (app-ops): "allow only while in use" for microphone, camera, contacts...
+ *     Needs the ADB connection (Wireless debugging); otherwise the app's Settings page opens.
+ *     The previous mode is saved so "Restore" puts it back as it was.
  */
 object Blocker {
     private const val TAG = "PG.Block"
@@ -25,16 +25,16 @@ object Blocker {
 
     // ------------------------------------------------------------------ DNS
     fun trackersOn(ctx: Context) = p(ctx).getBoolean("trackers", false)
-    /** Ndal app-et qe perdorin DNS-ne e tyre (DoH/DoT, 8.8.8.8 e shkruar ne kod). */
+    /** Stop apps that use their own DNS (DoH/DoT, hardcoded 8.8.8.8). */
     fun antiBypass(ctx: Context) = p(ctx).getBoolean("antibypass", true)
     fun setAntiBypass(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("antibypass", v).apply()
     fun setTrackers(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("trackers", v).apply()
 
     fun apps(ctx: Context): Set<String> = p(ctx).getStringSet("apps", emptySet())!!.toSet()
-    /** Interneti lejohet vetem kur app-i eshte ne ekran. */
+    /** Internet is allowed only while the app is on screen. */
     fun bgApps(ctx: Context): Set<String> = p(ctx).getStringSet("bgapps", emptySet())!!.toSet()
     fun setBgApp(ctx: Context, pkg: String, blocked: Boolean) = edit(ctx, "bgapps", pkg, blocked)
-    /** Domene qe perdoruesi i lejoi edhe pse nje liste i bllokon (false positive). */
+    /** Domains the user allowed even though a list blocks them (false positive). */
     fun allowed(ctx: Context): Set<String> = p(ctx).getStringSet("allow", emptySet())!!.toSet()
     fun setAllowed(ctx: Context, host: String, v: Boolean) = edit(ctx, "allow", host.lowercase().trimEnd('.'), v)
     fun hosts(ctx: Context): Set<String> = p(ctx).getStringSet("hosts", emptySet())!!.toSet()
@@ -52,15 +52,15 @@ object Blocker {
         ctx.packageManager.getPackagesForUid(uid)?.toList().orEmpty()
     }
 
-    /** Domene qe nuk duhen prekur kurre: kontrolli i lidhjes, ora, njoftimet push. */
+    /** Domains never to touch: connectivity checks, time, push notifications. */
     private val essential = setOf(
         "connectivitycheck.gstatic.com", "connectivitycheck.android.com", "clients3.google.com", "time.android.com",
         "mtalk.google.com", "android.clients.google.com", "play.googleapis.com",
     )
 
     /**
-     * Serverat e DNS-se se enkriptuar (DoH/DoT). Nje app qe i perdor anashkalon DNS-ne e telefonit,
-     * pra edhe bllokimin; kur s'i gjen, kthehet te DNS-ja normale. Shfletuesit e bejne vete kete.
+     * Encrypted DNS servers (DoH/DoT). An app using them bypasses the phone's DNS,
+     * and so the blocking; when they don't resolve, it falls back to normal DNS. Browsers do this themselves.
      */
     val dohHosts = setOf(
         "dns.google", "dns64.dns.google", "cloudflare-dns.com", "mozilla.cloudflare-dns.com", "chrome.cloudflare-dns.com",
@@ -69,7 +69,7 @@ object Blocker {
         "dns.mullvad.net", "doh.dns.sb", "dns.alidns.com", "doh.pub", "dns.twnic.tw", "doh.libredns.gr",
     )
 
-    /** Arsyeja e bllokimit, ose null nese kerkesa lejohet. Thirret per cdo kerkese DNS. */
+    /** The block reason, or null if the request is allowed. Called for every DNS request. */
     fun dnsVerdict(ctx: Context, uid: Int, host: String): String? {
         val h = host.lowercase().trimEnd('.')
         val sx = suffixes(h)
@@ -86,16 +86,16 @@ object Blocker {
             val bg = bgApps(ctx)
             if (bg.isNotEmpty() && pk.any { it in bg } && ForegroundApp.current(ctx) !in pk) return "background"
         }
-        // Facebook/Instagram/WhatsApp... nuk prishen: permbajtja dhe serverat e vete app-it lejohen gjithmone
+        // Facebook/Instagram/WhatsApp... don't break: content and the app's own servers are always allowed
         if (pk.any { Trackers.ownOrContent(h, it) } || Trackers.isContent(h)) return null
-        // app-et e sistemit (uid < 10000) nuk preken; per uid te ndare, bllokohet vetem
-        // nese asnjeri nga app-et e tij nuk e ka domenin si te vetin
+        // system apps (uid < 10000) are not touched; for a shared uid, block only
+        // if none of its apps owns the domain
         if (trackersOn(ctx) && uid >= 10000 && pk.isNotEmpty() && pk.all { Trackers.blockable(h, it) }) return "tracker"
         FilterLists.match(ctx, h)?.let { return "list:$it" }
         return null
     }
 
-    /** Teksti per perdoruesin per arsyen e ruajtur ne conn.why. */
+    /** User-facing text for the reason stored in conn.why. */
     fun reasonLabel(why: String?): String = when {
         why == null -> ""
         why == "domain" -> "blocked domain"
@@ -113,7 +113,7 @@ object Blocker {
     }
 
     // ------------------------------------------------------------------ lejet
-    /** Op-et qe kufizohen per nje grup sinjalizimi; per "personal" etj. vetem op-i konkret. */
+    /** Ops limited for an alert group; for "personal" etc. only the specific op. */
     fun opsFor(op: String): List<String> = when (Ops.map[op]?.second) {
         "mic" -> listOf("RECORD_AUDIO")
         "cam" -> listOf("CAMERA")
@@ -121,35 +121,35 @@ object Blocker {
         else -> listOf(op)
     }
 
-    /** pkg|OP -> menyra e meparshme */
+    /** pkg|OP -> previous mode */
     fun limited(ctx: Context): Map<String, String> =
         p(ctx).all.filterKeys { it.startsWith("op:") }.map { (k, v) -> k.removePrefix("op:") to v.toString() }.toMap()
 
-    /** Vetem keto op-e kane "vetem kur e perdor" ne Android; te tjerat jane lejo/blloko. */
+    /** Only these ops have "only while in use" on Android; the rest are allow/deny. */
     private val fgCapable = setOf("mic", "cam", "loc")
     fun limitMode(op: String) = if (Ops.map[op]?.second in fgCapable) "foreground" else "ignore"
     fun limitLabel(op: String, label: String) =
         if (limitMode(op) == "foreground") "$label: allow only while in use"
         else "$label: block completely (app gets an empty list)"
 
-    // Android 17 i pranon vetem ne nivel uid per lejet runtime; ne nivel package i kthen ne heshtje
+    // Android 17 accepts runtime permissions only at uid level; at package level it silently reverts them
     fun cmdSet(pkg: String, op: String, mode: String) = "appops set --uid $pkg $op $mode"
 
     sealed class Result(val msg: String) {
         class Done(msg: String) : Result(msg)
-        /** S'ka lidhje ADB: perdoruesi e ben vete te Settings ose me komanden nga kompjuteri. */
+        /** No ADB connection: the user does it in Settings or with the command from a computer. */
         class Manual(msg: String, val commands: List<String>) : Result(msg)
     }
 
     private fun uidMode(ctx: Context, pkg: String, op: String): String? {
         val out = runCatching { Shell.adb(ctx, "appops get --uid $pkg $op") }.getOrDefault("")
-        // "Uid mode: OP: ignore" kur ka kufizim ne nivel uid; perndryshe s'ka (= allow)
+        // "Uid mode: OP: ignore" when there is a uid-level limit; otherwise absent (= allow)
         return Regex("""Uid mode: $op: (\w+)""").find(out)?.groupValues?.get(1)
     }
 
     /**
-     * Mikrofoni/kamera/vendndodhja: "vetem kur e perdor" (foreground). Kontaktet, thirrjet, SMS,
-     * clipboard...: Android-i s'ka mes, keshtu qe bllokohen plotesisht (ignore). Verifikohet pas.
+     * Microphone/camera/location: "only while in use" (foreground). Contacts, calls, SMS,
+     * clipboard...: Android has no middle ground, so they are blocked fully (ignore). Verified afterwards.
      */
     fun limit(ctx: Context, pkg: String, op: String): Result {
         val ops = opsFor(op)

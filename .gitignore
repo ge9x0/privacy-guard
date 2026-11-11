@@ -9,3 +9,7 @@ samples/
 *.pdf
 *.hprof
 .DS_Store
+keystore.properties
+*.jks
+*.keystore
+dist/

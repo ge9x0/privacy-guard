@@ -1,6 +1,6 @@
 package com.privacyguard.core
 
-/** Lista e brokereve te te dhenave, rrjeteve te reklamave dhe SDK-ve te gjurmimit. */
+/** The list of data brokers, ad networks and tracking SDKs. */
 object Trackers {
     const val BROKER = "Data / location broker"
     const val ADS = "Ad network"
@@ -15,7 +15,7 @@ object Trackers {
 
     val weight = mapOf(BROKER to 3, ATTR to 2, ADS to 2, ANALYTICS to 2, BYTEDANCE to 2, META to 1, GOOGLE to 1, SAMSUNG to 1)
 
-    /** Kur kategoria i perket vete pronarit te app-it, nuk eshte "tracker i trete". */
+    /** When the category belongs to the app's own owner, it is not a "third-party tracker". */
     private val firstParty = mapOf(
         META to listOf("com.facebook.", "com.instagram.", "com.whatsapp"),
         GOOGLE to listOf("com.google.", "com.android."),
@@ -144,15 +144,15 @@ object Trackers {
     fun isFirstParty(t: T, pkg: String) = firstParty[t.category]?.any { pkg.startsWith(it) } == true
 
     /**
-     * Domene qe sjellin PERMBAJTJE (foto, video, mesazhe). Shenohen ne raport, por nuk bllokohen
-     * kurre: bllokimi i tyre do te prishte Instagram-in/WhatsApp-in brenda app-eve te tjera.
+     * Domains that carry CONTENT (photos, videos, messages). Shown in the report but never
+     * blocked: blocking them would break Instagram/WhatsApp content inside other apps.
      */
     private val content = setOf(
         "facebook.com", "facebook.net", "fbcdn.net", "instagram.com", "cdninstagram.com",
         "whatsapp.net", "whatsapp.com", "tiktok.com", "tiktokv.com", "byteoversea.com", "samsungrm.net",
     )
 
-    /** Pika gjurmimi brenda atyre domeneve: SDK-te, pixel-at, reklamat. Keto bllokohen. */
+    /** Tracking points inside those domains: SDKs, pixels, ads. These are blocked. */
     private val trackingEndpoints = setOf(
         "graph.facebook.com", "an.facebook.com", "connect.facebook.net", "pixel.facebook.com", "analytics.tiktok.com",
     )
@@ -160,8 +160,8 @@ object Trackers {
     fun isContent(host: String) = suffixes(host).let { s -> s.none { it in trackingEndpoints } && s.any { it in content } }
 
     /**
-     * Serverat e vete app-it: "instagram.com" per com.instagram.android, "whatsapp.net" per com.whatsapp.
-     * Pikat e gjurmimit (graph.facebook.com brenda nje app-i tjeter) nuk llogariten si te vetat.
+     * The app's own servers: "instagram.com" for com.instagram.android, "whatsapp.net" for com.whatsapp.
+     * Tracking points (graph.facebook.com inside another app) don't count as its own.
      */
     fun ownOrContent(host: String, pkg: String): Boolean {
         val s = suffixes(host)
@@ -172,7 +172,7 @@ object Trackers {
         return label.length >= 4 && pkg.split('.').any { it == label }
     }
 
-    /** Fjale qe tregojne gjurmim ne emrat e serverave qe s'jane ende ne liste. */
+    /** Words that indicate tracking in server names not yet on a list. */
     private val keywords = listOf(
         "analytics", "telemetry", "tracking", "tracker", "metrics", "adservice", "adserver", "doubleclick", "pixel",
         "beacon", "crashlytics", "appmeasurement", "app-measurement", "adsdk", "ads.", "ad.", "stats.", "events.",
@@ -189,8 +189,8 @@ object Trackers {
     }
 
     /**
-     * A mund te bllokohet kjo kerkese pa prishur app-in? Jo kurre per vete pronarin
-     * (Instagram -> instagram.com) dhe jo per domenet e permbajtjes.
+     * Can this request be blocked without breaking the app? Never for the owner itself
+     * (Instagram -> instagram.com) and never for content domains.
      */
     fun blockable(host: String, pkg: String): Boolean {
         val t = classify(host) ?: return false

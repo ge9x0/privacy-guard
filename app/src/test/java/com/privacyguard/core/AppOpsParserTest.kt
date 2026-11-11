@@ -69,7 +69,7 @@ class AppOpsParserTest {
         assertEquals(3_723_000L, ev[1].durationMs)
     }
 
-    /** Android 17 (Galaxy A35, One UI 9): seksioni discrete si tabele. Rreshta ne formatin real. */
+    /** Android 17 (Galaxy A35, One UI 9): the discrete section as a table. Lines in the real format. */
     @Test
     fun android17DiscreteTable() {
         val txt = """

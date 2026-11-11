@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,14 +19,26 @@ android {
         versionName = "0.1.0"
     }
 
+    // Release key: with -Ppublish and a keystore.properties file (never committed) it signs the release build;
+    // otherwise the debug key is used, which is fine for personal installs only.
+    val ksFile = rootProject.file("keystore.properties")
+    // Only with -Ppublish: personal builds keep the debug key so they install over the existing app.
+    if (ksFile.exists() && project.hasProperty("publish")) {
+        val ks = Properties().apply { ksFile.inputStream().use { load(it) } }
+        signingConfigs.create("release") {
+            storeFile = file(ks.getProperty("storeFile"))
+            storePassword = ks.getProperty("storePassword")
+            keyAlias = ks.getProperty("keyAlias")
+            keyPassword = ks.getProperty("keyPassword")
+        }
+    }
     buildTypes {
         release {
             // R8: kodi i optimizuar e ben nderfaqen Compose disa here me te shpejte se build-i debug
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Per instalim personal: nenshkruhet me celesin debug
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {

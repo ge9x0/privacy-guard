@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,14 +117,14 @@ private fun Home() {
     var blockTick by remember { mutableIntStateOf(0) }
     var setupOpen by remember { mutableStateOf<Boolean?>(null) }
     var tab by remember { mutableIntStateOf(0) }
-    // Nje gjendje scroll per cdo tab: kalimi s'e humb vendin ku ishe.
+    // One scroll state per tab: switching doesn't lose your place.
     val scrolls = List(4) { rememberScrollState() }
     var setupY by remember { mutableIntStateOf(0) }
     var goSetup by remember { mutableIntStateOf(0) }
     LaunchedEffect(goSetup) { if (goSetup > 0) { kotlinx.coroutines.delay(50); scrolls[0].animateScrollTo(setupY) } }
 
     LaunchedEffect(refresh) {
-        // Lidhja ADB mund te zgjase deri 6 s: s'duhet ta vonoje shfaqjen e te dhenave.
+        // The ADB connection can take up to 6 s: it must not delay showing the data.
         launch(Dispatchers.IO) { mode = Shell.mode(ctx, tryConnect = true) }
         usage = Collector.hasUsageAccess(ctx)
         today = withContext(Dispatchers.IO) { runCatching { Analyzer(ctx).build(LocalDate.now()) }.getOrNull() }
@@ -170,7 +171,7 @@ private fun Home() {
     val stepsDone = listOf(usage, full, monitor, vpn).count { it }
     val showSetup = setupOpen ?: (mode != null && stepsDone < 4)
 
-    // Statusi: shirit progresi i fiksuar lart dhe rezultati poshte, te dukshem nga cdo vend i faqes.
+    // Status: a progress bar fixed at the top and the result at the bottom, visible from anywhere on the page.
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     LaunchedEffect(msg) {
         val m = msg ?: return@LaunchedEffect
@@ -364,6 +365,8 @@ private fun HistoryCard(enabled: Boolean, onClear: () -> Unit) {
         Hint(if (since > 0) "Recording since " + java.time.Instant.ofEpochMilli(since).atZone(java.time.ZoneId.systemDefault())
             .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")) + "."
             else "Includes the last 7 days that Android keeps itself.")
+        val size = remember { com.privacyguard.data.Db.get(ctx).sizeBytes(ctx) }
+        Hint("Stored on this phone: %.1f MB. Activity is kept 60 days, the DNS log 30 days.".format(size / 1_048_576.0))
         if (!ask) OutlinedButton(onClick = { ask = true }, enabled = enabled) { Text("Clear history") }
         else {
             Text("Delete everything collected so far and start from zero? Earlier activity will not be read again. " +
@@ -705,8 +708,8 @@ private fun DnsLogCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String) -
     val blockedHosts = remember(tick) { Blocker.hosts(ctx) }
     var onlyFlagged by remember { mutableStateOf(true) }
     var q by remember { mutableStateOf("") }
-    val rows = d.dns.filter { (!onlyFlagged || it.kind != null || it.blocked > 0) &&
-        (q.isBlank() || it.host.contains(q, true) || an.name(it.pkg).contains(q, true)) }
+    val rows = remember(d, onlyFlagged, q) { d.dns.filter { (!onlyFlagged || it.kind != null || it.blocked > 0) &&
+        (q.isBlank() || it.host.contains(q, true) || an.name(it.pkg).contains(q, true)) } }
     SectionCard {
         Title("DNS log")
         Hint("Every server name apps asked for today. Flagged: known trackers, block-list hits, and names with tracking keywords (analytics, telemetry, pixel…).")
@@ -716,7 +719,8 @@ private fun DnsLogCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String) -
             androidx.compose.material3.FilterChip(!onlyFlagged, { onlyFlagged = false }, label = { Text("All ${d.dns.size}") })
         }
         OutlinedTextField(q, { q = it }, label = { Text("Search app or server") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        for (e in rows.take(80)) {
+        var limit by remember(onlyFlagged, q) { mutableIntStateOf(50) }
+        for (e in rows.take(limit)) {
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -736,7 +740,7 @@ private fun DnsLogCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String) -
                 else Chip("Blocked", RED, small = true)
             }
         }
-        if (rows.size > 80) Hint("Showing 80 of ${rows.size}. Search to narrow it down.")
+        if (rows.size > limit) TextButton(onClick = { limit += 50 }) { Text("Show ${minOf(50, rows.size - limit)} more (${rows.size - limit} left)") }
     }
 }
 
@@ -747,7 +751,7 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
                     onManual: (String, Blocker.Result.Manual) -> Unit, onChange: () -> Unit) {
     val ctx = LocalContext.current
     val an = remember { com.privacyguard.core.AppNames(ctx) }
-    // Cdo seksion ngarkohet me vete dhe mbahet ne memorie derisa te ndryshoje dicka (tick).
+    // Each section loads on its own and stays in memory until something changes (tick).
     val scores = cached("scores", tick) { com.privacyguard.apps.Score.compute(ctx) }
     val sdks = cached("sdks", tick) {
         com.privacyguard.apps.UserApps.list(ctx).map { it.packageName to com.privacyguard.apps.SdkScanner.of(ctx, it) }
@@ -756,17 +760,20 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
     val advice = cached("advice", tick) { com.privacyguard.apps.PermissionAdvisor.advise(ctx) }
     val bg = remember(tick) { Blocker.bgApps(ctx) }
     val revoked = remember(tick) { com.privacyguard.apps.PermissionAdvisor.revoked(ctx) }
+    var histPkg by remember { mutableStateOf<String?>(null) }
+    histPkg?.let { AppHistoryDialog(it) { histPkg = null } }
+    SecurityCard(tick)
     var allScores by remember { mutableStateOf(false) }
     SectionCard {
         Title("Privacy score · last 7 days")
-        Hint("100 is clean. Points are lost for alerts, tracker companies contacted, tracker SDKs inside and heavy background uploads.")
+        Hint("Tap an app for its last 30 days. 100 is clean. Points are lost for alerts, tracker companies contacted, tracker SDKs inside and heavy background uploads.")
         val sc = scores
         if (sc == null) Hint("Calculating…")
         for (s in if (allScores) sc.orEmpty() else sc.orEmpty().take(10)) {
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(48.dp)) { Chip("${s.score}", when { s.score < 50 -> RED; s.score < 80 -> ORANGE; else -> GREEN }) }
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).clickable { histPkg = s.pkg }) {
                     Text(an.name(s.pkg), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Hint(listOfNotNull(
                         s.crit.takeIf { it > 0 }?.let { "$it critical" }, s.high.takeIf { it > 0 }?.let { "$it high" },
@@ -859,6 +866,7 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
             }) { Text("Restore", fontSize = 12.sp) }
         }
     }
+    AppChangesCard(tick)
     InspectCard()
     DebloatCard(tick, enabled, onWork, onManual, onChange)
 }

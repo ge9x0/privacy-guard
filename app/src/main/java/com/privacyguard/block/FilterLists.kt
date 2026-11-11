@@ -9,11 +9,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Lista bllokimi si te uBlock Origin, por ne nivel DNS (HaGeZi, formati "wildcard onlydomains":
- * nje domen bllokon edhe gjithe nen-domenet e tij).
+ * Block lists like uBlock Origin, but at DNS level (HaGeZi, "wildcard onlydomains" format:
+ * a domain also blocks all its subdomains).
  *
- * Ruhen si hash 64-bit te renditur (8 bajte/domen; ~600k domene = ~5 MB) dhe kerkohen me
- * binary search per cdo prapashtese te emrit: "a.b.tracker.com" -> tracker.com, b.tracker.com...
+ * Stored as sorted 64-bit hashes (8 bytes/domain; ~600k domains = ~5 MB) and looked up with
+ * binary search for every suffix of the name: "a.b.tracker.com" -> tracker.com, b.tracker.com...
  */
 object FilterLists {
     private const val TAG = "PG.Lists"
@@ -38,7 +38,7 @@ object FilterLists {
 
     private fun bin(ctx: Context, id: String) = File(ctx.filesDir, "list_$id.bin")
 
-    /** id -> hash-et e renditura; ngarkohen nga disku sipas nevojes. */
+    /** id -> sorted hashes; loaded from disk when needed. */
     private val loaded = java.util.concurrent.ConcurrentHashMap<String, LongArray>()
 
     private fun arr(ctx: Context, id: String): LongArray? = loaded[id] ?: synchronized(this) {
@@ -59,7 +59,7 @@ object FilterLists {
         return h
     }
 
-    /** id-ja e listes qe e bllokon kete emer, ose null. */
+    /** id of the list that blocks this name, or null. */
     fun match(ctx: Context, host: String): String? {
         val hs = suffixHashes(host)
         if (hs.isEmpty()) return null
@@ -81,7 +81,7 @@ object FilterLists {
 
     fun nameOf(id: String) = all.firstOrNull { it.id == id }?.name ?: id
 
-    /** Shkarkon listat e ndezura (CDN, pastaj GitHub). Kthen nje permbledhje per perdoruesin. */
+    /** Downloads the enabled lists (CDN, then GitHub). Returns a summary for the user. */
     fun update(ctx: Context, force: Boolean = false): String {
         val out = StringBuilder()
         var err: String? = null
@@ -109,7 +109,7 @@ object FilterLists {
         } finally { c.disconnect() }
     }
 
-    /** Tekst -> hash-e te renditur ne disk. Rreshtat "#" dhe bosh kapercehen. */
+    /** Text -> sorted hashes on disk. "#" and empty lines are skipped. */
     fun compile(ctx: Context, id: String, text: String): Int {
         val a = compileText(text)
         val tmp = File(ctx.filesDir, "list_$id.tmp")

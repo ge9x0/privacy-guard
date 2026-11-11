@@ -33,11 +33,11 @@ import com.privacyguard.data.ScreenRow
 import com.privacyguard.ui.MainActivity
 
 /**
- * Sherbimi qe punon gjithe kohen:
- *  - shenon kur ekrani eshte ndezur/fikur (Android-i s'e ruan vete)
- *  - degjon kur mikrofoni/kamera ndizen e fiken (punon edhe pa leje te vecanta)
- *  - ne menyrat e plota gjen menjehere cili app i perdor
- *  - njofton menjehere nese ndodh me ekran te fikur
+ * Service that runs all the time:
+ *  - records when the screen turns on/off (Android doesn't store it)
+ *  - listens for the microphone/camera turning on and off (works without special permissions)
+ *  - in full modes finds right away which app uses them
+ *  - notifies right away if it happens with the screen off
  */
 class MonitorService : Service() {
     private lateinit var db: Db
@@ -60,13 +60,14 @@ class MonitorService : Service() {
     private var clipSince = 0L
     private val clipNotified = HashMap<String, Long>()
 
-    /** Clipboard: lexo op-in READ_CLIPBOARD dhe njofto per leximet jashte ekranit. */
+    /** Clipboard: read the READ_CLIPBOARD op and notify about reads while off screen. */
     private val clipWatch = object : Runnable {
         override fun run() {
             val on = getSystemService(android.os.PowerManager::class.java).isInteractive
             if (com.privacyguard.Prefs.clipAlerts(this@MonitorService) && mode != Mode.LIMITED) runCatching { checkClipboard() }
                 .onFailure { Log.w(TAG, "clip", it) }
-            worker.postDelayed(this, if (on) 20_000L else 60_000L)
+            // Rarely with the screen off: Android keeps the last read, so nothing is lost, only the notification is later.
+            worker.postDelayed(this, if (on) 30_000L else 5 * 60_000L)
         }
     }
 
@@ -74,7 +75,7 @@ class MonitorService : Service() {
         val out = Shell.run(this, "dumpsys appops --op READ_CLIPBOARD", mode) ?: return
         val evs = com.privacyguard.core.AppOpsParser.parse(out).filter { it.op == "READ_CLIPBOARD" }
         val now = System.currentTimeMillis()
-        if (clipSince == 0L) { clipSince = now; return }          // hera e pare: mos njofto historine
+        if (clipSince == 0L) { clipSince = now; return }          // first time: don't notify about history
         val hits = ClipWatch.newHits(evs, clipSince, ClipWatch.ignorer(this))
         clipSince = maxOf(clipSince, evs.maxOfOrNull { it.ts } ?: clipSince)
         if (hits.isEmpty()) return
@@ -101,7 +102,9 @@ class MonitorService : Service() {
     private val heartbeat = object : Runnable {
         override fun run() {
             sampleScreen()
-            worker.postDelayed(this, 60_000)
+            // screen on/off is recorded by screenReceiver; with the screen off one sample every 5 min is enough
+            val on = getSystemService(android.os.PowerManager::class.java).isInteractive
+            worker.postDelayed(this, if (on) 60_000L else 5 * 60_000L)
         }
     }
 
@@ -118,12 +121,14 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    /** App i ri i instaluar -> skano SDK-te dhe lejet, njofto. */
+    /** New app installed -> scan SDKs and permissions, notify. */
     private val installReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
-            if (i.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
             val pkg = i.data?.schemeSpecificPart ?: return
-            worker.post { runCatching { com.privacyguard.apps.Insights.onInstalled(this@MonitorService, pkg) } }
+            // Update: compare permissions/SDKs with the previous version
+            if (i.getBooleanExtra(Intent.EXTRA_REPLACING, false))
+                worker.post { runCatching { com.privacyguard.apps.AppChanges.onUpdated(this@MonitorService, pkg) } }
+            else worker.post { runCatching { com.privacyguard.apps.Insights.onInstalled(this@MonitorService, pkg) } }
         }
     }
 
@@ -140,11 +145,13 @@ class MonitorService : Service() {
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
         }, ContextCompat.RECEIVER_NOT_EXPORTED)
-        // sistemi e dergon vetem ai (broadcast i mbrojtur)
+        // only the system sends it (protected broadcast)
         ContextCompat.registerReceiver(this, installReceiver, IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") },
             ContextCompat.RECEIVER_EXPORTED)
         getSystemService(AudioManager::class.java).registerAudioRecordingCallback(recCb, worker)
         getSystemService(CameraManager::class.java).registerAvailabilityCallback(camCb, worker)
+        // Baseline for the update alert (only apps without one; uses the saved scans)
+        worker.postDelayed({ runCatching { com.privacyguard.apps.AppChanges.baseline(this) } }, 60_000)
         worker.post {
             mode = Shell.mode(this, tryConnect = true)
             updateOngoing()
@@ -156,8 +163,9 @@ class MonitorService : Service() {
             override fun run() {
                 mode = Shell.mode(this@MonitorService, tryConnect = true)
                 updateOngoing()
-                // pas restartimit firewall-i i kernelit eshte bosh: rivendose sapo ka lidhje ADB
+                // after a restart the kernel firewall is empty: re-apply as soon as there is an ADB connection
                 if (com.privacyguard.block.Firewall.pending(this@MonitorService)) runCatching { com.privacyguard.block.Firewall.sync(this@MonitorService) }
+                runCatching { com.privacyguard.widget.PrivacyWidget.update(this@MonitorService) }
                 worker.postDelayed(this, 15 * 60_000L)
             }
         }, 15 * 60_000L)
@@ -182,7 +190,7 @@ class MonitorService : Service() {
         db.addScreen(ScreenRow(System.currentTimeMillis(), on, if (on) topApp() else null))
     }
 
-    /** App-i ne ekran (nga UsageStats; kerkon "Usage access"). */
+    /** The app on screen (from UsageStats; needs "Usage access"). */
     private fun topApp(): String? {
         val usm = getSystemService(UsageStatsManager::class.java)
         val now = System.currentTimeMillis()
@@ -233,7 +241,7 @@ class MonitorService : Service() {
         }
     }
 
-    /** Cili app? Ne menyrat e plota e pyesim sistemin; ne menyren e kufizuar hamendesojme app-in ne ekran. */
+    /** Which app? In full modes we ask the system; in limited mode we guess the app on screen. */
     private fun attribute(isMic: Boolean): Set<String> {
         if (mode != Mode.LIMITED) {
             val p = LiveAttribution.who(this, isMic, mode)
@@ -254,7 +262,7 @@ class MonitorService : Service() {
     // ------------------------------------------------------------------ njoftimet
     private fun alertOff(what: String, pkgs: Set<String>) {
         val real = pkgs.filter { it !in Ops.knownSystem }
-        if (pkgs.isNotEmpty() && real.isEmpty()) { Log.i(TAG, "alert $what: vetem app sistemi $pkgs"); return }   // p.sh. Google Assistant
+        if (pkgs.isNotEmpty() && real.isEmpty()) { Log.i(TAG, "alert $what: system apps only $pkgs"); return }   // e.g. Google Assistant
         val who = if (real.isEmpty()) "unknown app" else real.joinToString { names.name(it) }
         val n = Notification.Builder(this, App.CH_ALERTS)
             .setSmallIcon(R.drawable.ic_launcher)

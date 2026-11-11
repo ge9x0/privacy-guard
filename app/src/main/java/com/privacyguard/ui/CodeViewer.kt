@@ -25,7 +25,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 
-/** Shikues kodi vetem-lexim: numra rreshtash, ngjyra per XML, kerkim dhe kopjim. */
+/** Read-only code viewer: line numbers, XML colors, search and copy. */
 @Composable
 fun CodeViewer(title: String, text: String, onClose: () -> Unit) {
     val ctx = LocalContext.current
@@ -83,7 +83,7 @@ class Palette(val tag: Color, val str: Color, val attr: Color, val comment: Colo
 private val reTag = Regex("""</?[A-Za-z_][\w:.-]*|/?>""")
 private val reAttr = Regex("""([\w:.-]+)(=)("[^"]*")""")
 
-/** Ngjyra te thjeshta: etiketa XML, atribute, stringje, titujt "#" dhe rreshtat "!" te raporteve. */
+/** Simple colors: XML tags, attributes, strings, "#" headings and "!" lines of the reports. */
 fun highlight(l: String, q: String, c: Palette): AnnotatedString = buildAnnotatedString {
     append(l)
     val t = l.trimStart()

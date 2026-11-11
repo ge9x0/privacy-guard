@@ -6,21 +6,21 @@ import android.util.Log
 import com.privacyguard.collect.Shell
 
 /**
- * Firewall-i i vertete i Android-it (zinxhiri i kernelit FIREWALL_CHAIN_OEM_DENY_3): ndal GJITHE
- * trafikun e nje app-i, jo vetem DNS-ne, keshtu qe IP-te e shkruara ne kod dhe DNS-ja e tij e
- * enkriptuar nuk e anashkalojne. E ndez vetem shell-i (Wireless debugging), dhe Android-i e
- * fshin pas restartimit: rivendoset ne lidhjen e radhes ADB (Reconnect / monitorimi cdo 15 min).
+ * Android's real firewall (kernel chain FIREWALL_CHAIN_OEM_DENY_3): stops ALL
+ * traffic of an app, not only DNS, so hardcoded IPs and its own encrypted
+ * DNS cannot bypass it. Only the shell (Wireless debugging) can turn it on, and Android
+ * clears it on restart: it is applied again on the next ADB connection (Reconnect / monitor every 15 min).
  */
 object Firewall {
     private const val TAG = "PG.Firewall"
     private fun p(ctx: Context) = ctx.getSharedPreferences("pg_fw", Context.MODE_PRIVATE)
 
-    /** App-et qe firewall-i i ka bllokuar tani (sipas nesh). Fshihet ne restartim. */
+    /** Apps the firewall blocks right now (as far as we know). Cleared on restart. */
     fun applied(ctx: Context): Set<String> = p(ctx).getStringSet("applied", emptySet())!!.toSet()
     fun lastSync(ctx: Context) = p(ctx).getLong("t", 0L)
     fun onBoot(ctx: Context) = p(ctx).edit().remove("applied").apply()
 
-    /** Vetem app-e te perdoruesit; kurre sistemi ose Privacy Guard vete. */
+    /** User apps only; never the system or Privacy Guard itself. */
     private fun eligible(ctx: Context, pkg: String) = pkg != ctx.packageName && runCatching {
         ctx.packageManager.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM == 0
     }.getOrDefault(false)
@@ -30,7 +30,7 @@ object Firewall {
         return want != applied(ctx)
     }
 
-    /** Ben qe firewall-i te perputhet me listen "Apps without internet". null nese s'ka lidhje ADB. */
+    /** Makes the firewall match the "Apps without internet" list. null if there is no ADB connection. */
     fun sync(ctx: Context): String? {
         if (!Shell.adbConnected(ctx, true)) return null
         val want = Blocker.apps(ctx).filter { eligible(ctx, it) }.toSet()

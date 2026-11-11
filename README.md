@@ -12,10 +12,12 @@ Everything runs on the phone. No account, no cloud, no analytics. The only netwo
 |---|---|
 | **Today** | Alerts (sensitive access in the background or with the screen off), data access followed by a tracker, trackers contacted today, daily and 7-day PDF reports, setup |
 | **Activity** | Every access by every app, grouped by category; DNS log of every server each app asked for, with tracker / block-list / keyword flags |
-| **Apps** | Privacy score per app, tracker SDKs inside each app (deep scan of the code), permission advisor, **Inspect an app** (manifest decoder, servers and keys written in the code, read-only code viewer), **Debloater** |
+| **Apps** | **Spyware check** (accessibility, notification access, device admin, keyboards, VPNs, overlays, hidden or sideloaded apps, user CA certificates), privacy score per app with a 30-day chart, changes after updates (new permissions or tracker SDKs), tracker SDKs inside each app (deep scan of the code), permission advisor, **Inspect an app** (manifest decoder, servers and keys written in the code, read-only code viewer), **Debloater** |
 | **Blocking** | Block lists (HaGeZi), firewall, internet only while on screen, blocked apps/domains, limited permissions |
 
-Also: instant notification when the mic or camera turns on with the screen off, clipboard read alerts, a new-app alert with a tracker scan, a weekly privacy score, and a PDF report every night at 23:50 in `Download/PrivacyGuard`.
+Also: instant notification when the mic or camera turns on with the screen off, clipboard read alerts, a new-app alert with a tracker scan, an alert when an update adds permissions or trackers, a weekly privacy score, a home-screen widget, a Quick Settings tile for the VPN, and a PDF report every night at 23:50 in `Download/PrivacyGuard`.
+
+Battery: the background service used about 1% per day on the test phone. Activity is kept 60 days and the DNS log 30 days; the database is compacted weekly.
 
 ## Access levels
 
@@ -46,7 +48,16 @@ git clone <this repo> && cd PrivacyGuardApp
 ./gradlew connectedDebugAndroidTest   # taps every button on every tab (use an emulator: it presses Remove/Block too)
 ```
 
-JDK 17+ and the Android SDK (platform 35) are needed. GitHub Actions (`.github/workflows/build.yml`) builds the APK, runs the unit tests and lint on every push; the APK is under *Actions → Artifacts*.
+JDK 17+ and the Android SDK (platform 35) are needed. `assembleRelease` makes an optimized (R8) APK. For a public release run `./gradlew assembleRelease -Ppublish`: it is signed with your own key from a `keystore.properties` file in the project root (never commit it):
+
+```properties
+storeFile=/path/to/release.jks
+storePassword=...
+keyAlias=privacyguard
+keyPassword=...
+```
+
+Without it the release APK is signed with the debug key, which is fine for your own phone but not for publishing. GitHub Actions (`.github/workflows/build.yml`) builds the APK, runs the unit tests and lint on every push; the APK is under *Actions → Artifacts*.
 
 ## How it works
 
@@ -56,10 +67,12 @@ core/      parsers for dumpsys output, alert rules, tracker list
 monitor/   foreground service: screen, mic, camera, clipboard, instant alerts
 vpn/       local DNS-only VPN: logging, blocking, catching apps that bypass the phone's DNS
 block/     blocking rules, block lists, firewall, foreground-app detection
-apps/      privacy score, SDK scanner (manifest + DEX), permission advisor, debloater
+apps/      privacy score, SDK scanner (manifest + DEX), permission advisor, debloater,
+           spyware check, update changes, 30-day history
 inspect/   binary XML (AndroidManifest / resources.arsc) parser, servers and keys finder
 report/    PDF report
-ui/        Compose screens, code viewer
+ui/        Compose screens, code viewer, charts
+widget/    home-screen widget and Quick Settings tile
 ```
 
 - **Blocking** happens at DNS level through the local VPN: blocked names get NXDOMAIN. An app's own servers (Instagram → instagram.com) are never blocked by a list. System apps are not touched.

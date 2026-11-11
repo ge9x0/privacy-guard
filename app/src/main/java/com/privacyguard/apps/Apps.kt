@@ -13,7 +13,7 @@ import com.privacyguard.core.Trackers
 import com.privacyguard.data.Db
 import java.time.LocalDate
 
-/** Android 11-12 s'kane PackageInfoFlags (API 33); pa kete app-i rrezohet atje. */
+/** Android 11-12 lack PackageInfoFlags (API 33); without this the app crashes there. */
 object Compat {
     @Suppress("DEPRECATION")
     fun packageInfo(pm: PackageManager, pkg: String, flags: Int): PackageInfo =
@@ -21,15 +21,15 @@ object Compat {
         else pm.getPackageInfo(pkg, flags)
 }
 
-/** App-et e instaluara nga perdoruesi (jo te sistemit), me emrin. */
+/** Apps installed by the user (not system apps), with their name. */
 object UserApps {
     private val lock = Any()
     @Volatile private var last: Pair<Long, List<PackageInfo>>? = null
 
     /**
-     * Lista e plote me komponentet e cdo app-i. Kerkohet app per app: nje kerkese e vetme per
-     * te gjitha app-et me te gjitha detajet mund te kaloje kufirin e binder-it ne telefona me pak RAM
-     * (Android 11 e nderpret lidhjen). Mbahet 60 s qe seksionet e tab-it Apps ta ndajne.
+     * Full list with each app's components. Fetched app by app: a single request for
+     * all apps with all details can exceed the binder limit on phones with little RAM
+     * (Android 11 drops the connection). Kept for 60 s so the Apps tab sections share it.
      */
     fun list(ctx: Context): List<PackageInfo> = synchronized(lock) {
         last?.takeIf { System.currentTimeMillis() - it.first < 60_000 }?.let { return it.second }
@@ -50,8 +50,8 @@ object UserApps {
 }
 
 /**
- * Gjen SDK-te e gjurmimit brenda nje app-i (si Exodus Privacy): nga emrat e komponenteve
- * (activity, service, receiver, provider) dhe meta-data te manifestit. Nuk ekzekuton asgje.
+ * Finds tracking SDKs inside an app (like Exodus Privacy): from the component names
+ * (activity, service, receiver, provider) and manifest meta-data. Runs nothing.
  */
 object SdkScanner {
     data class Sdk(val name: String, val category: String)
@@ -124,7 +124,7 @@ object SdkScanner {
 
     fun match(strings: Collection<String>, extra: List<Pair<String, Sdk>> = emptyList()): List<Sdk> {
         val hits = (sig + extra).filter { (p, _) -> strings.any { it.startsWith(p) || it == p.trimEnd('.') } }.map { it.second }
-        // e njejta kompani nga dy lista: mbaj emrin tone (me kategori)
+        // the same company from two lists: keep our name (with category)
         return hits.distinctBy { key(it.name) }
     }
 
@@ -137,15 +137,15 @@ object SdkScanner {
     }
 
     /**
-     * Lista e App Manager (GPL-3.0-or-later, mbi bazen e Exodus Privacy): 989 nenshkrime. Shih
-     * res/values/am_trackers.xml dhe LICENSE.
+     * App Manager's list (GPL-3.0-or-later, based on Exodus Privacy): 989 signatures. See
+     * res/values/am_trackers.xml and LICENSE.
      */
     @Volatile private var am: List<Pair<String, Sdk>>? = null
     fun amList(ctx: Context): List<Pair<String, Sdk>> = am ?: run {
         val r = ctx.resources
         val sigs = r.getStringArray(com.privacyguard.R.array.tracker_signatures)
         val names = r.getStringArray(com.privacyguard.R.array.tracker_names)
-        // App Manager shenon me "²" bibliotekat qe s'jane trackera (Play Billing, ML Kit...): kapercehen
+        // App Manager marks libraries that aren't trackers (Play Billing, ML Kit...) with "²": skipped
         sigs.indices.filter { !names.getOrElse(it) { "" }.startsWith("²") }
             .map { sigs[it] to Sdk(names.getOrElse(it) { sigs[it] }, categoryFor(names.getOrElse(it) { "" })) }.also { am = it }
     }
@@ -174,7 +174,7 @@ object SdkScanner {
         return s
     }
 
-    /** Skanim i thelle: manifesti + paketat e kodit (DEX). Disa sekonda per app-et e medha. */
+    /** Deep scan: manifest + code packages (DEX). A few seconds for big apps. */
     fun deepScan(ctx: Context, pi: PackageInfo): List<Sdk> {
         val ai = pi.applicationInfo ?: return scan(pi)
         val apks = listOfNotNull(ai.sourceDir) + ai.splitSourceDirs.orEmpty()
@@ -186,7 +186,7 @@ object SdkScanner {
 
     private fun p(ctx: Context) = ctx.getSharedPreferences("pg_sdk", Context.MODE_PRIVATE)
 
-    /** Me cache sipas versionit. Rezultati i skanimit te thelle (DEX) ka perparesi kur ekziston. */
+    /** Cached per version. The deep (DEX) scan result takes priority when it exists. */
     fun of(ctx: Context, pi: PackageInfo, deep: Boolean = false): List<Sdk> {
         val key = "${pi.longVersionCode}:${pi.lastUpdateTime}"
         val c = p(ctx).getString(pi.packageName, null)
@@ -203,7 +203,7 @@ object SdkScanner {
     private fun decode(s: String) = if (s.isEmpty()) emptyList() else s.split(';').map { val (n, c) = it.split('~', limit = 2); Sdk(n, c) }
 }
 
-/** Leje te rrezikshme: grupi -> lejet e Android-it dhe op-i i AppOps per "perdorur se fundi". */
+/** Dangerous permissions: group -> Android permissions and the AppOps op for "last used". */
 object PermGroups {
     data class G(val id: String, val label: String, val perms: List<String>, val ops: List<String>)
     val all = listOf(
@@ -229,8 +229,8 @@ object PermGroups {
 }
 
 /**
- * Keshilla per lejet: leje qe app-i s'i ka perdorur, ose qe s'perkojne me llojin e app-it
- * (nje loje me SMS, nje elektrik dore me kontakte). "Hiq" ekzekuton `pm revoke`.
+ * Permission advice: permissions the app hasn't used, or that don't fit the kind of app
+ * (a game with SMS, a flashlight with contacts). "Remove" runs `pm revoke`.
  */
 object PermissionAdvisor {
     data class Advice(val pkg: String, val group: PermGroups.G, val perms: List<String>, val reason: String, val strong: Boolean)
@@ -246,7 +246,7 @@ object PermissionAdvisor {
         val now = System.currentTimeMillis()
         val since = maxOf(Prefs.since(ctx), now - 60 * 86_400_000L)
         val days = ((now - since) / 86_400_000L).toInt()
-        // perdorimi i fundit per pkg+op nga historiku
+        // last use per pkg+op from the history
         val last = HashMap<Pair<String, String>, Long>()
         for (e in db.access(since, now + 1)) if (e.kind == "access") last.merge(e.pkg to e.op, e.ts, ::maxOf)
         val sms = runCatching { android.provider.Telephony.Sms.getDefaultSmsPackage(ctx) }.getOrNull()
@@ -282,7 +282,7 @@ object PermissionAdvisor {
     private fun p(ctx: Context) = ctx.getSharedPreferences("pg_revoked", Context.MODE_PRIVATE)
     fun revoked(ctx: Context): Map<String, String> = p(ctx).all.mapValues { it.value.toString() }   // "pkg|group" -> perms
 
-    /** Heq lejet me `pm revoke` (kerkon Wireless debugging), perndryshe hap Settings. */
+    /** Removes permissions with `pm revoke` (needs Wireless debugging), otherwise opens Settings. */
     fun revoke(ctx: Context, a: Advice): Blocker.Result {
         val cmds = a.perms.map { "pm revoke ${a.pkg} $it" }
         if (!Shell.adbConnected(ctx, true)) return Blocker.Result.Manual(
@@ -307,7 +307,7 @@ object PermissionAdvisor {
     }
 }
 
-/** Pike privatesie 0-100 per app, nga 7 ditet e fundit. 100 = asgje e dyshimte. */
+/** Privacy score 0-100 per app, from the last 7 days. 100 = nothing suspicious. */
 object Score {
     data class S(val pkg: String, val score: Int, val crit: Int, val high: Int, val med: Int,
                  val companies: Set<String>, val sdks: Int, val bgMb: Long)
@@ -327,7 +327,7 @@ object Score {
             for ((pkg, n) in d.net) bg.merge(pkg, n.txBg, Long::plus)
         }
         val sdks = UserApps.list(ctx).associate { it.packageName to SdkScanner.of(ctx, it).size }
-        val pkgs = (acc.keys + comp.keys + sdks.keys).filter { it in sdks }   // vetem app-et e perdoruesit
+        val pkgs = (acc.keys + comp.keys + sdks.keys).filter { it in sdks }   // user apps only
         return pkgs.map { pkg ->
             val a = acc[pkg] ?: IntArray(3)
             val c = comp[pkg].orEmpty()

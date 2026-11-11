@@ -19,11 +19,11 @@ import com.privacyguard.collect.Shell
 import kotlin.concurrent.thread
 
 /**
- * Ciftimi me Wireless debugging pa kompjuter.
+ * Pairing with Wireless debugging without a computer.
  *
- * Problemi: kodi i ciftimit zhduket nese del nga ekrani i Settings. Zgjidhja
- * (si Shizuku): app-i gjen porten me mDNS dhe nxjerr nje njoftim ku e shkruan
- * kodin direkt, pa lene Settings.
+ * The problem: the pairing code disappears if you leave the Settings screen. The solution
+ * (like Shizuku): the app finds the port with mDNS and posts a notification where you type
+ * the code directly, without leaving Settings.
  */
 object Pairing {
     private const val TAG = "PG.Pairing"
@@ -89,7 +89,7 @@ object Pairing {
         ctx.getSystemService(NotificationManager::class.java).notify(NOTIF_ID, b.build())
     }
 
-    /** Ciftim + lidhje + leje. Kthen nje mesazh per perdoruesin. */
+    /** Pair + connect + permissions. Returns a message for the user. */
     fun pairAndSetup(ctx: Context, port: Int, code: String): String {
         val m = AdbManager.get(ctx)
         val paired = runCatching { m.pair("127.0.0.1", port, code.trim()) }

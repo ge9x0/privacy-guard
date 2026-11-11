@@ -19,7 +19,7 @@ class InspectTest {
         assertTrue("android.permission.DUMP" in perms)
         assertTrue(Axml.toXml(root).contains("<application"))
         val arsc = ZipFile(apk).use { z -> Axml.arscStrings(z.getInputStream(z.getEntry("resources.arsc")).readBytes()) }
-        assertTrue(arsc.any { it.contains("appsflyer", true) })   // nga lista e App Manager
+        assertTrue(arsc.any { it.contains("appsflyer", true) })   // from the App Manager list
     }
 
     private fun node(n: String, vararg a: Pair<String, String>, ch: List<Axml.Node> = emptyList()) =

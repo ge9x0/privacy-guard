@@ -8,21 +8,21 @@ import com.privacyguard.collect.Shell
 import org.json.JSONArray
 
 /**
- * Debloater: heq app-e te sistemit vetem per perdoruesin 0 (`pm uninstall -k --user 0`).
- * APK-ja mbetet ne /system, prandaj cdo heqje kthehet me `cmd package install-existing`.
- * Lista: android-debloat-list (AGPL-3.0), ne assets/debloat.
+ * Debloater: removes system apps for user 0 only (`pm uninstall -k --user 0`).
+ * The APK stays in /system, so every removal is undone with `cmd package install-existing`.
+ * List: android-debloat-list (AGPL-3.0), in assets/debloat.
  */
 object Debloat {
     data class Entry(
         val id: String, val label: String?, val desc: String, val removal: String, val warning: String?,
         val deps: List<String>, val requiredBy: List<String>, val list: String,
     ) {
-        /** delete/replace jane te sigurta; caution/unsafe kerkojne paralajmerim. */
+        /** delete/replace are safe; caution/unsafe need a warning. */
         val safe get() = removal == "delete" || removal == "replace"
     }
     data class Item(val e: Entry, val name: String, val removed: Boolean, val system: Boolean = true)
 
-    /** Kurre: pa keto humbet ADB-ja, ekrani ose vete Privacy Guard. */
+    /** Never: without these, ADB, the screen or Privacy Guard itself are lost. */
     private val never = setOf("android", "com.android.shell", "com.android.systemui", "com.android.settings",
         "com.android.phone", "com.android.providers.settings", "com.android.packageinstaller",
         "com.google.android.packageinstaller", "com.android.permissioncontroller",
@@ -44,19 +44,19 @@ object Debloat {
         out.distinctBy { it.id }.also { cache = it }
     }
 
-    /** Vetem paketat qe ekzistojne ne kete telefon (te instaluara ose te hequra per user 0). */
+    /** Only packages present on this phone (installed or removed for user 0). */
     fun items(ctx: Context): List<Item> {
         val pm = ctx.packageManager
         val self = setOf(defaultLauncher(ctx), defaultIme(ctx))
-        // Nje thirrje e vetme ne vend te ~4800 (nje per cdo hyrje te listes).
+        // One call instead of ~4800 (one per list entry).
         @Suppress("DEPRECATION")
         val have = pm.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).associateBy { it.packageName }
         return entries(ctx).mapNotNull { e ->
             if (e.id in never || e.id in self) return@mapNotNull null
             val ai = have[e.id] ?: return@mapNotNull null
             val removed = ai.flags and ApplicationInfo.FLAG_INSTALLED == 0
-            // Vetem app-e te sistemit: per app-et e instaluara nga Play (p.sh. Office i Samsung-ut)
-            // "pm uninstall --user 0" fshin APK-ne vertete dhe install-existing s'ka cfare te ktheje.
+            // System apps only: for apps installed from Play (e.g. Samsung's Office)
+            // "pm uninstall --user 0" really deletes the APK and install-existing has nothing to bring back.
             val system = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0
             if (!system && !removed) return@mapNotNull null
             Item(e, e.label ?: runCatching { ai.loadLabel(pm).toString() }.getOrDefault(e.id), removed, system)
@@ -83,7 +83,7 @@ object Debloat {
     fun restore(ctx: Context, pkg: String): Blocker.Result {
         val ai = runCatching { ctx.packageManager.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.getOrNull()
         if (ai != null && ai.flags and ApplicationInfo.FLAG_SYSTEM == 0) {
-            // APK-ja s'eshte me ne telefon; te dhenat po. Hapet faqja e dyqanit.
+            // The APK is no longer on the phone; the data is. Opens the store page.
             runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
                 android.net.Uri.parse("market://details?id=$pkg")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
             return Blocker.Result.Done("This app was installed from the store, so it must be installed again from there. Your data was kept.")

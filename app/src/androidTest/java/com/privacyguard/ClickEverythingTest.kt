@@ -15,15 +15,15 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Hap cdo tab dhe shtyp cdo buton/switch qe gjen (vetem ne emulator: perfshin edhe Remove/Block).
- * Testi deshton nese app-i rrezohet ose ngec. Butonat qe hapin ekrane te sistemit kthehen me Back.
+ * Opens every tab and taps every button/switch it finds (emulator only: includes Remove/Block).
+ * The test fails if the app crashes or hangs. Buttons that open system screens are undone with Back.
  */
 @RunWith(AndroidJUnit4::class)
 class ClickEverythingTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private val dev = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
     private val tabs = listOf("Today", "Activity", "Apps", "Blocking")
-    /** Hapin dialogje te sistemit qe s'mbyllen dot me siguri, ose fillojne pairing-un. */
+    /** They open system dialogs that can't be closed reliably, or start pairing. */
     private val skip = setOf("Start", "Pair", "Reconnect")
 
     private fun label(n: SemanticsNode): String =
@@ -32,7 +32,7 @@ class ClickEverythingTest {
 
     private fun backToApp() {
         val pkg = rule.activity.packageName
-        // Kthehu te i njejti Activity (Back mund ta mbyllte ate vete); REORDER_TO_FRONT e sjell perpara pa krijuar te ri.
+        // Return to the same Activity (Back could close it); REORDER_TO_FRONT brings it forward without creating a new one.
         if (dev.currentPackageName != pkg) {
             val ctx = InstrumentationRegistry.getInstrumentation().targetContext
             ctx.startActivity(android.content.Intent(ctx, MainActivity::class.java).addFlags(
@@ -80,7 +80,7 @@ class ClickEverythingTest {
                 rule.waitForIdle(); Thread.sleep(700)
                 backToApp(); closeDialogs(); rule.waitForIdle()
                 clicked += "[$t] $l"
-                openTab(t)   // nje buton mund te kete nderruar tab-in
+                openTab(t)   // a button may have switched the tab
                 i++
             }
         }

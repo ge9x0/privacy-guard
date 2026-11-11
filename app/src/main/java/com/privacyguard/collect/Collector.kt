@@ -24,7 +24,7 @@ object Collector {
             AppOpsManager.MODE_ALLOWED
     }
 
-    /** Mbledhje e plote: historiku i qasjeve (nese kemi menyre te plote) + statistikat e rrjetit. */
+    /** Full collection: access history (if we have a full level) + network statistics. */
     fun snapshot(ctx: Context): CollectResult {
         val db = Db.get(ctx)
         val mode = Shell.mode(ctx)
@@ -43,7 +43,7 @@ object Collector {
             val evs = AppOpsParser.parse(txt)
             lap("parse")
             read = evs.size
-            // prune() i fshin sidoqofte ato me te vjetra se 60 dite; mos i shkruaj fare
+            // prune() deletes anything older than 60 days anyway; don't write it at all
             val cut = maxOf(System.currentTimeMillis() - 60 * 86_400_000L, com.privacyguard.Prefs.since(ctx))
             new = db.addAccess(evs.filter { it.ts >= cut })
             lap("db access")
@@ -60,7 +60,7 @@ object Collector {
         return CollectResult(mode, read, new, net.size, note)
     }
 
-    /** Sa bajte dergoi/mori cdo app cdo dite, te ndara ne plan te pare / background. */
+    /** How many bytes each app sent/received per day, split into foreground / background. */
     fun netStats(ctx: Context, days: Int): List<NetRow> {
         val nsm = ctx.getSystemService(NetworkStatsManager::class.java)
         val z = ZoneId.systemDefault()
@@ -93,7 +93,7 @@ object Collector {
     }
 }
 
-/** Ruan tekstin origjinal te fundit, per diagnostikim ("Eksporto te dhenat raw"). */
+/** Keeps the last raw text, for diagnostics ("Export raw data"). */
 object RawStore {
     fun save(ctx: Context, name: String, text: String) {
         runCatching { java.io.File(ctx.filesDir, "raw_$name.txt").writeText(text) }

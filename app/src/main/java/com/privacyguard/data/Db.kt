@@ -5,14 +5,14 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-/** Nje qasje ne mikrofon/kamere/vendndodhje/... */
+/** One access to the microphone/camera/location/... */
 data class AccessEvent(
     val pkg: String,
     val uid: Int,
     val op: String,
     val ts: Long,            // ms
     val durationMs: Long,
-    val state: String,       // top, fgsvc, bg, cch, ... ose "unknown"
+    val state: String,       // top, fgsvc, bg, cch, ... or "unknown"
     val kind: String,        // access | reject
     val source: String,      // discrete | last | live
 )
@@ -36,14 +36,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("ALTER TABLE conn ADD COLUMN blocked INTEGER DEFAULT 0")
-        // v3: arsyeja e bllokimit ("tracker", "list:pro", "background"...)
+        // v3: the block reason ("tracker", "list:pro", "background"...)
         if (oldVersion < 3) db.execSQL("ALTER TABLE conn ADD COLUMN why TEXT")
     }
 
     fun addAccess(events: List<AccessEvent>): Int {
         var n = 0
         writableDatabase.transaction {
-            // nje komande e pergatitur per te gjitha rreshtat (11k ne cdo mbledhje); -1 = ekzistonte
+            // one prepared statement for all rows (11k per collection); -1 = already existed
             compileStatement("INSERT OR IGNORE INTO access(pkg,uid,op,ts,duration_ms,state,kind,source) VALUES (?,?,?,?,?,?,?,?)").use { st ->
                 for (e in events) {
                     st.clearBindings()
@@ -123,20 +123,46 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
         return out
     }
 
-    /** Fshi te dhenat me te vjetra se N dite (qe baza te mos rritet pa fund). */
+    /** Deletes everything collected. */
     fun clearAll() = writableDatabase.transaction {
         for (t in listOf("access", "net", "screen", "conn")) delete(t, null, null)
     }
 
-    fun prune(days: Int = 60) {
-        val cut = System.currentTimeMillis() - days * 86_400_000L
+    /** (ts, op) of one app's accesses since `from` (for the app's chart). */
+    fun accessOf(pkg: String, from: Long): List<Pair<Long, String>> =
+        readableDatabase.rawQuery("SELECT DISTINCT ts, op FROM access WHERE pkg=? AND ts>=? AND kind='access'", arrayOf(pkg, from.toString())).use { c ->
+            List(c.count) { c.moveToNext(); c.getLong(0) to c.getString(1) }
+        }
+
+    /** (ts, host) of one uid's DNS requests since `from`. */
+    fun connOf(uid: Int, from: Long): List<Pair<Long, String>> =
+        readableDatabase.rawQuery("SELECT ts, host FROM conn WHERE uid=? AND ts>=?", arrayOf(uid.toString(), from.toString())).use { c ->
+            List(c.count) { c.moveToNext(); c.getLong(0) to c.getString(1) }
+        }
+
+    @Volatile private var lastPrune = 0L
+
+    /**
+     * Deletes old data: history after 60 days, the DNS log (the biggest table) after 30 days.
+     * At most once every 6 hours; a weekly VACUUM shrinks the file.
+     */
+    fun prune(days: Int = 60, connDays: Int = 30, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastPrune < 6 * 3_600_000L) return
+        lastPrune = now
+        val cut = (now - days * 86_400_000L).toString()
+        val connCut = (now - connDays * 86_400_000L).toString()
         writableDatabase.transaction {
-            delete("access", "ts<?", arrayOf(cut.toString()))
-            delete("net", "bucket<?", arrayOf(cut.toString()))
-            delete("screen", "ts<?", arrayOf(cut.toString()))
-            delete("conn", "ts<?", arrayOf(cut.toString()))
+            delete("access", "ts<?", arrayOf(cut))
+            delete("net", "bucket<?", arrayOf(cut))
+            delete("screen", "ts<?", arrayOf(cut))
+            delete("conn", "ts<?", arrayOf(connCut))
         }
     }
+
+    fun vacuum() = runCatching { writableDatabase.execSQL("VACUUM") }
+
+    fun sizeBytes(ctx: Context) = ctx.getDatabasePath("privacy.db").length()
 
     private inline fun <T> SQLiteDatabase.transaction(block: SQLiteDatabase.() -> T): T {
         beginTransaction()

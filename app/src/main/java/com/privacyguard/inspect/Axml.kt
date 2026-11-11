@@ -1,8 +1,8 @@
 package com.privacyguard.inspect
 
 /**
- * Lexues i XML-se binare te Android-it (AndroidManifest.xml brenda APK-se) dhe i string pool-it
- * (i njejti format perdoret edhe ne resources.arsc). Vetem lexim; shkruar per kete projekt.
+ * Reader for Android's binary XML (AndroidManifest.xml inside an APK) and its string pool
+ * (the same format is used in resources.arsc). Read only; written for this project.
  */
 object Axml {
     class Node(val name: String, val attrs: MutableList<Pair<String, String>> = ArrayList(), val children: MutableList<Node> = ArrayList()) {
@@ -14,7 +14,7 @@ object Axml {
     private fun u16(b: ByteArray, i: Int) = (b[i].toInt() and 0xFF) or ((b[i + 1].toInt() and 0xFF) shl 8)
     private fun u32(b: ByteArray, i: Int) = u16(b, i) or (u16(b, i + 2) shl 16)
 
-    /** String pool-i qe fillon ne `at` (chunk RES_STRING_POOL_TYPE). */
+    /** The string pool starting at `at` (chunk RES_STRING_POOL_TYPE). */
     fun stringPool(b: ByteArray, at: Int): List<String> {
         if (at + 28 > b.size || u16(b, at) != 0x0001) return emptyList()
         val count = u32(b, at + 8)
@@ -26,7 +26,7 @@ object Axml {
             runCatching {
                 var p = start + u32(b, offs + i * 4)
                 if (utf8) {
-                    if (b[p].toInt() and 0x80 != 0) p += 2 else p += 1           // gjatesia ne utf16
+                    if (b[p].toInt() and 0x80 != 0) p += 2 else p += 1           // length in UTF-16 units
                     var len = b[p].toInt() and 0xFF
                     if (len and 0x80 != 0) { len = ((len and 0x7F) shl 8) or (b[p + 1].toInt() and 0xFF); p += 2 } else p += 1
                     String(b, p, minOf(len, b.size - p), Charsets.UTF_8)
@@ -39,12 +39,12 @@ object Axml {
         }
     }
 
-    /** Stringjet e resources.arsc (string pool-i global pas kokes 12-bajteshe). */
+    /** Strings of resources.arsc (the global string pool after the 12-byte header). */
     fun arscStrings(b: ByteArray): List<String> = if (b.size > 12 && u16(b, 0) == 0x0002) stringPool(b, u16(b, 2)) else emptyList()
 
     /**
-     * Dekodon XML-ne binare ne nje peme. `attrName` jep emrin e nje atributi nga ID-ja e burimit
-     * (per atributet "android:" kur emri ne string pool mungon ose eshte i fshehur).
+     * Decodes binary XML into a tree. `attrName` gives an attribute's name from its resource ID
+     * (for "android:" attributes when the name in the string pool is missing or obfuscated).
      */
     fun parse(b: ByteArray, attrName: (Int) -> String? = { null }): Node? {
         if (b.size < 8 || u16(b, 0) != 0x0003) return null

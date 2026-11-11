@@ -10,8 +10,8 @@ import android.util.Log
 import kotlin.concurrent.thread
 
 /**
- * Vetem debug. Nis mikrofonin pas `delay` sekondash per `secs` sekonda, qe te provohet
- * njoftimi i MonitorService kur ekrani eshte i fikur. Audio nuk ruhet: lexohet dhe hidhet.
+ * Debug only. Starts the microphone after `delay` seconds for `secs` seconds, to test
+ * MonitorService's screen-off notification. Audio isn't stored: it is read and discarded.
  *
  *   adb shell am broadcast -n com.privacyguard/.debug.TestMicReceiver --ei delay 8 --ei secs 6
  */

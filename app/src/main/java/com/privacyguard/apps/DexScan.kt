@@ -4,11 +4,11 @@ import java.io.File
 import java.util.zip.ZipFile
 
 /**
- * Lexon emrat e klasave nga kodi i nje app-i (classes*.dex brenda APK-se), pa e ekzekutuar.
- * Ruan vetem paketat ("com.appsflyer.internal"), qe jane shume me pak se klasat.
+ * Reads class names from an app's code (classes*.dex inside the APK) without running it.
+ * Keeps only the packages ("com.appsflyer.internal"), far fewer than the classes.
  *
- * Formati DEX: koka ka string_ids (0x38/0x3C) dhe type_ids (0x40/0x44); cdo type_id tregon nje
- * string si "Lcom/appsflyer/AppsFlyerLib;".
+ * DEX format: the header has string_ids (0x38/0x3C) and type_ids (0x40/0x44); each type_id points to a
+ * string like "Lcom/appsflyer/AppsFlyerLib;".
  */
 object DexScan {
     fun packages(apks: List<String>, maxDexBytes: Int = 64 shl 20): Set<String> {
@@ -32,7 +32,7 @@ object DexScan {
     private fun u32(b: ByteArray, i: Int) = (b[i].toInt() and 0xFF) or ((b[i + 1].toInt() and 0xFF) shl 8) or
         ((b[i + 2].toInt() and 0xFF) shl 16) or ((b[i + 3].toInt() and 0xFF) shl 24)
 
-    /** Te gjitha stringjet e nje DEX-i (per URL, domene, celesa). `keep` filtron para se te ruhen. */
+    /** All strings of one DEX (for URLs, domains, keys). `keep` filters before storing. */
     fun readStrings(b: ByteArray, out: MutableCollection<String>, keep: (String) -> Boolean) {
         if (b.size < 0x70 || b[0] != 'd'.code.toByte() || b[1] != 'e'.code.toByte() || b[2] != 'x'.code.toByte()) return
         val strSize = u32(b, 0x38); val strOff = u32(b, 0x3C)
@@ -50,7 +50,7 @@ object DexScan {
         }
     }
 
-    /** Stringjet nga te gjithe DEX-et e APK-ve. */
+    /** Strings from all DEX files of the APKs. */
     fun strings(apks: List<String>, keep: (String) -> Boolean, maxDexBytes: Int = 64 shl 20): List<String> {
         val out = ArrayList<String>()
         for (path in apks) runCatching {
@@ -75,7 +75,7 @@ object DexScan {
             if (si < 0 || si >= strSize) continue
             var p = u32(b, strOff + si * 4)
             if (p <= 0 || p >= b.size) continue
-            while (p < b.size && b[p].toInt() and 0x80 != 0) p++   // uleb128: gjatesia ne utf16
+            while (p < b.size && b[p].toInt() and 0x80 != 0) p++   // uleb128: length in UTF-16 units
             p++
             if (p >= b.size || b[p] != 'L'.code.toByte()) continue
             sb.setLength(0)

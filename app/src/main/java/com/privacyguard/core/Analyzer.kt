@@ -53,12 +53,12 @@ object Ops {
     val sensitive = setOf("personal", "loc", "mic", "cam", "clip", "media")
     val fgService = setOf("fgsvc", "fg", "fgs", "fgsvcl")
 
-    /** Mesazheri/thirrje: sinkronizojne kontaktet ne background qe te gjejne personat qe njeh. */
+    /** Messengers/calls: sync contacts in the background to find people you know. */
     val contactSync = listOf(
         "com.whatsapp", "org.telegram.", "org.thoughtcrime.securesms", "com.viber.voip", "com.facebook.orca",
         "com.google.android.apps.tachyon", "com.skype.", "com.microsoft.teams", "jp.naver.line.", "com.discord",
     )
-    /** App-i i prodhuesit qe e ka vete kete te dhene (kalendari lexon kalendarin, telefoni regjistrin e thirrjeve). */
+    /** The manufacturer's app that owns this data (the calendar reads the calendar, the dialer the call log). */
     private val vendors = listOf("com.samsung.", "com.sec.", "com.google.android.", "com.android.", "com.miui.", "com.xiaomi.",
         "com.huawei.", "com.hihonor.", "com.oplus.", "com.coloros.", "com.oneplus.", "com.motorola.", "com.sonymobile.", "com.nothing.", "com.transsion.")
     private val owners = mapOf(
@@ -73,9 +73,9 @@ object Ops {
     private val contactOps = setOf("READ_CONTACTS", "READ_CALL_LOG", "READ_PHONE_NUMBERS", "GET_ACCOUNTS")
 
     /**
-     * Ul sinjalizimet per app-et qe e kane te natyrshme: app-et e sistemit (Kontaktet, Telefoni,
-     * Mesazhet, Kalendari, Cloud...) lexojne te dhenat e veta, mesazherite sinkronizojne kontaktet.
-     * Mikrofoni/kamera e sistemit nuk fshihen, vetem ulen nje nivel.
+     * Lowers alerts for apps where it is natural: system apps (Contacts, Phone,
+     * Messages, Calendar, Cloud...) read their own data, messengers sync contacts.
+     * System microphone/camera use is not hidden, only lowered one level.
      */
     fun refine(sev: Sev, why: String, group: String, op: String, pkg: String, system: Boolean): Pair<Sev, String> {
         if (sev == Sev.INFO) return sev to why
@@ -91,7 +91,7 @@ object Ops {
         }
     }
 
-    /** App-e qe e perdorin mikrofonin/vendndodhjen ne background per arsye te njohura. */
+    /** Apps that use the microphone/location in the background for known reasons. */
     val knownSystem = mapOf(
         "com.google.android.googlequicksearchbox" to "Google Assistant ('Hey Google')",
         "com.google.android.as" to "Android System Intelligence",
@@ -108,15 +108,15 @@ object Ops {
         "com.sec.android.app.voicenote" to "Samsung Voice Recorder",
         "com.privacyguard" to "Privacy Guard",
     ).let { m ->
-        // ne debug, prova e mikrofonit (TestMicReceiver) duhet te sillet si nje app i vertete;
-        // ne release Privacy Guard s'ka fare leje mikrofoni
+        // in debug, the microphone test (TestMicReceiver) must behave like a real app;
+        // in release Privacy Guard has no microphone permission at all
         if (com.privacyguard.BuildConfig.DEBUG) m - "com.privacyguard" else m
     }
 }
 
-/** Emrat e app-eve nga vete telefoni. */
+/** App names from the phone itself. */
 class AppNames(private val ctx: Context) {
-    // Te perbashketa per gjithe app-in: emrat lexohen nga sistemi nje here, jo ne cdo karte/tab.
+    // Shared across the app: names are read from the system once, not in every card/tab.
     private val cache get() = sharedNames
     private val uidCache get() = sharedUids
     companion object {
@@ -164,14 +164,14 @@ data class NetUse(var txBg: Long = 0, var txFg: Long = 0, var rx: Long = 0, var 
 
 data class TrackerUse(val hosts: MutableSet<String> = mutableSetOf(), var count: Int = 0)
 
-/** "Mori X ne ora H dhe pas N min kontaktoi kompanine Y." Lidhje ne kohe, jo prove e permbajtjes. */
+/** "Took X at time H and N min later contacted company Y." A link in time, not proof of content. */
 data class Link(val what: String, val ts: Long, val company: String, val host: String, val afterMs: Long)
 
-/** Per nje app: cfare mori, kujt i dergoi (trackera te paleve te treta) dhe sa u bllokuan. */
+/** For one app: what it took, whom it sent to (third-party trackers) and how many were blocked. */
 data class Flow(
     val pkg: String,
-    val took: Map<String, Int>,          // emri i te dhenes -> sa here
-    val bgTook: Set<String>,             // te marra ne background / me ekran te fikur
+    val took: Map<String, Int>,          // data name -> how many times
+    val bgTook: Set<String>,             // taken in the background / with the screen off
     val to: Map<Trackers.T, TrackerUse>,
     val links: List<Link>,
     val blocked: Int,
@@ -179,8 +179,8 @@ data class Flow(
 )
 
 /**
- * Nje rresht i regjistrit DNS: kush (app), cilin server, sa here, a u bllokua dhe pse.
- * kind: "tracker" (lista jone), "list" (nje liste bllokimi e njeh), "keyword" (emri tregon gjurmim), null = normal.
+ * One DNS log row: who (app), which server, how many times, whether it was blocked and why.
+ * kind: "tracker" (our list), "list" (a block list knows it), "keyword" (the name suggests tracking), null = normal.
  */
 data class DnsEntry(
     val pkg: String, val host: String, val count: Int, val blocked: Int, val why: String?,
@@ -209,7 +209,7 @@ data class DayReport(
     val locN get() = tot("loc") { 1 }.toInt()
     val crit get() = alerts.count { it.sev == Sev.CRIT }
     val high get() = alerts.count { it.sev == Sev.HIGH }
-    /** Sa raste te ndryshme (app + e dhene), jo sa evente: 10 lexime te kontakteve nga i njejti app = 1. */
+    /** How many distinct cases (app + data), not events: 10 contact reads by the same app = 1. */
     fun cases(s: Sev) = alerts.filter { it.sev == s }.map { it.e.pkg to it.label }.toSet().size
     val txBg get() = net.values.sumOf { it.txBg }
     val tx get() = net.values.sumOf { it.tx }
@@ -262,7 +262,7 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
     }
 
     private val systemCache = HashMap<String, Boolean>()
-    /** I instaluar nga prodhuesi (Samsung/Google/Android), edhe nese eshte perditesuar. */
+    /** Installed by the manufacturer (Samsung/Google/Android), even if updated since. */
     private fun isSystem(pkg: String): Boolean = systemCache.getOrPut(pkg) {
         runCatching {
             val f = ctx.packageManager.getApplicationInfo(pkg, 0).flags
@@ -275,7 +275,7 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
         val screen = db.screen(from - 600_000, to)
         val raw = db.access(from, to).filter { it.op in Ops.map }
 
-        // e njejta qasje mund te vije nga 'discrete', 'last' dhe 'live' -> mbaj me te sakten
+        // the same access may come from 'discrete', 'last' and 'live' -> keep the most precise
         val exact = raw.filter { it.source == "discrete" }.groupBy { Triple(it.pkg, it.op, it.kind) }
         val exactByOp = raw.filter { it.source != "live" }.groupBy { it.op }
         val kept = raw.filter { e ->
@@ -338,7 +338,7 @@ class Analyzer(private val ctx: Context, private val screenGapMs: Long = 180_000
             }.sortedWith(compareBy({ it.kind == null }, { -it.count }))
     }
 
-    /** Lidh qasjet ne te dhena personale me trackerat qe i kontaktoi i njejti app brenda 10 minutash. */
+    /** Links accesses to personal data with the trackers the same app contacted within 10 minutes. */
     private fun flows(
         events: List<Ev>, conns: List<ConnRow>, trk: Map<String, Map<Trackers.T, TrackerUse>>, net: Map<String, NetUse>,
     ): List<Flow> {

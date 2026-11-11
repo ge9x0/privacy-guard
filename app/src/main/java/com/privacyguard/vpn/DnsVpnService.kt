@@ -24,16 +24,16 @@ import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
 /**
- * VPN lokale qe kalon VETEM kerkesat DNS (emrat e serverave), jo trafikun.
- * Per cdo kerkese Android-i na tregon cili app e beri (getConnectionOwnerUid),
- * keshtu shohim p.sh. "Weatherly -> sdk.x-mode.io". Asgje nuk dergohet jashte
- * telefonit pervec vete kerkeses DNS te serveri i zakonshem.
+ * Local VPN that carries ONLY DNS requests (server names), not the traffic.
+ * For every request Android tells us which app made it (getConnectionOwnerUid),
+ * so we see e.g. "Weatherly -> sdk.x-mode.io". Nothing leaves the
+ * phone except the DNS request itself to the usual server.
  */
 class DnsVpnService : VpnService() {
     private var iface: ParcelFileDescriptor? = null
     @Volatile private var running = false
-    // 16, jo 4: nje kerkese qe s'merr pergjigje e ze thread-in 5 s; me 4 radha mbushej dhe
-    // app-et hiqnin dore para se t'u vinte radha.
+    // 16, not 4: a request without an answer holds its thread for 5 s; with 4 the queue filled up and
+    // apps gave up before their turn came.
     private val pool = Executors.newFixedThreadPool(16)
     @Volatile private var up: InetAddress = InetAddress.getByName("1.1.1.1")
     private var netCb: ConnectivityManager.NetworkCallback? = null
@@ -54,22 +54,22 @@ class DnsVpnService : VpnService() {
             ?: InetAddress.getByName("1.1.1.1")
     }
 
-    /** Serveri DNS ndiqet kur ndryshon rrjeti (WiFi <-> celular); me pare mbetej ai i fillimit. */
+    /** The DNS server follows network changes (Wi-Fi <-> mobile); before, it stayed on the initial one. */
     private fun watchUpstream(cm: ConnectivityManager) {
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
-                // vetem rrjete te verteta (jo VPN-ja jone) dhe vetem nese kane DNS IPv4; perndryshe
-                // mbajme serverin aktual, ne vend qe te biem te 1.1.1.1
+                // only real networks (not our VPN) and only if they have IPv4 DNS; otherwise
+                // keep the current server instead of falling back to 1.1.1.1
                 if (cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != false) return
                 val n = lp.dnsServers.firstOrNull { it is Inet4Address && it.hostAddress != FAKE_DNS } ?: return
                 if (n != up) { Log.i(TAG, "upstream ${up.hostAddress} -> ${n.hostAddress}"); up = n }
             }
         }
-        // app-i yne eshte jashte VPN-se, keshtu qe rrjeti "default" eshte ai i vertete
+        // our app is outside the VPN, so the "default" network is the real one
         runCatching { cm.registerDefaultNetworkCallback(cb); netCb = cb }.onFailure { Log.w(TAG, "netcb", it) }
     }
 
-    /** IP-te e serverave publike DNS qe po kapen (bosh kur kapja eshte fikur). */
+    /** IPs of the public DNS servers being caught (empty when catching is off). */
     @Volatile private var bypassIps: Set<String> = emptySet()
 
     private fun startVpn() {
@@ -81,8 +81,8 @@ class DnsVpnService : VpnService() {
             .addDnsServer(FAKE_DNS)
             .setBlocking(true)
             .addDisallowedApplication(packageName)
-        // Kapja e anashkalimit: app-et qe flasin direkt me 8.8.8.8 / 1.1.1.1 ... kalojne nga ne.
-        // Jo kur perdoruesi ka "Private DNS" me emer (atehere sistemi vete perdor keto servera).
+        // Bypass catching: apps that talk straight to 8.8.8.8 / 1.1.1.1 ... go through us.
+        // Not when the user has a named "Private DNS" (the system itself uses these servers then).
         val pdns = runCatching { android.provider.Settings.Global.getString(contentResolver, "private_dns_mode") }.getOrNull()
         bypassIps = if (Blocker.antiBypass(this) && pdns != "hostname") Packets.PUBLIC_DNS else emptySet()
         for (ip in bypassIps) b.addRoute(ip, 32)
@@ -91,12 +91,14 @@ class DnsVpnService : VpnService() {
         iface = pfd
         running = true
         isRunning = true
+        com.privacyguard.widget.PrivacyWidget.updateAsync(this)
+        android.service.quicksettings.TileService.requestListeningState(this, android.content.ComponentName(this, com.privacyguard.widget.VpnTile::class.java))
         val input = FileInputStream(pfd.fileDescriptor)
         val output = FileOutputStream(pfd.fileDescriptor)
         val db = Db.get(this)
         val cm = getSystemService(ConnectivityManager::class.java)
         watchUpstream(cm)
-        // hera e pare: shkarko listat e bllokimit (ne sfond, me internet)
+        // first time: download the block lists (in the background, with internet)
         androidx.work.WorkManager.getInstance(this).enqueueUniqueWork("filter-lists-now", androidx.work.ExistingWorkPolicy.KEEP,
             androidx.work.OneTimeWorkRequestBuilder<com.privacyguard.apps.FilterUpdateWorker>()
                 .setConstraints(androidx.work.Constraints.Builder().setRequiredNetworkType(androidx.work.NetworkType.CONNECTED).build()).build())
@@ -108,8 +110,8 @@ class DnsVpnService : VpnService() {
                 val q = Packets.parseDnsQuery(buf, n)
                 if (q == null) { if (bypassIps.isNotEmpty()) refuseBypass(buf, n, cm, db, output); continue }
                 val pkt = buf.copyOf(n)
-                // uid-i merret MENJEHERE, sa socket-i i app-it eshte ende hapur; me pare merrej
-                // brenda radhes dhe, kur radha vonohej, Android-i kthente -1 (app i panjohur).
+                // the uid is looked up IMMEDIATELY, while the app's socket is still open; before, it was looked up
+                // inside the queue and, when the queue was slow, Android returned -1 (unknown app).
                 val uid = runCatching {
                     cm.getConnectionOwnerUid(
                         OsConstants.IPPROTO_UDP,
@@ -134,8 +136,8 @@ class DnsVpnService : VpnService() {
     private val bypassLogged = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     /**
-     * Trafik jo-DNS drejt nje serveri publik DNS (DoH ne 443, DoT ne 853): TCP merr RST qe app-i te
-     * kaloje menjehere te DNS-ja e telefonit; UDP (QUIC/DoQ) hidhet. Regjistrohet nje here ne minute.
+     * Non-DNS traffic to a public DNS server (DoH on 443, DoT on 853): TCP gets an RST so the app
+     * switches to the phone's DNS at once; UDP (QUIC/DoQ) is dropped. Logged once per minute.
      */
     private fun refuseBypass(buf: ByteArray, n: Int, cm: ConnectivityManager, db: Db, out: FileOutputStream) {
         val dst = Packets.ipv4Dst(buf, n) ?: return
@@ -143,7 +145,7 @@ class DnsVpnService : VpnService() {
         val syn = Packets.isTcpSyn(buf, n)
         val rst = Packets.tcpReset(buf, n)
         val ports = Packets.ports(buf, n)
-        // uid-i merret PARA RST-se: pas saj socket-i mbyllet dhe Android-i kthen -1
+        // the uid is looked up BEFORE the RST: after it the socket closes and Android returns -1
         val uid = if (ports != null && (syn || Packets.proto(buf) == 17)) runCatching {
             cm.getConnectionOwnerUid(Packets.proto(buf),
                 InetSocketAddress(InetAddress.getByAddress(buf.copyOfRange(12, 16)), ports.first),
@@ -181,6 +183,8 @@ class DnsVpnService : VpnService() {
         netCb = null
         running = false
         isRunning = false
+        com.privacyguard.widget.PrivacyWidget.updateAsync(this)
+        runCatching { android.service.quicksettings.TileService.requestListeningState(this, android.content.ComponentName(this, com.privacyguard.widget.VpnTile::class.java)) }
         runCatching { iface?.close() }
         iface = null
     }
@@ -194,13 +198,13 @@ class DnsVpnService : VpnService() {
         const val ACTION_STOP = "com.privacyguard.STOP_VPN"
         @Volatile var isRunning = false
 
-        /** Thirr pasi VpnService.prepare() ka marre pelqimin e perdoruesit. */
+        /** Call after VpnService.prepare() has the user's consent. */
         fun start(ctx: Context) = ctx.startService(Intent(ctx, DnsVpnService::class.java))
         fun stop(ctx: Context) = ctx.startService(Intent(ctx, DnsVpnService::class.java).setAction(ACTION_STOP))
     }
 }
 
-/** Paketa IPv4/UDP minimale per DNS. */
+/** Minimal IPv4/UDP packet for DNS. */
 object Packets {
     class DnsQuery(
         val src: ByteArray, val dst: ByteArray, val srcPort: Int, val dstPort: Int,
@@ -220,7 +224,7 @@ object Packets {
         val off = ihl + 8
         val len = minOf(udpLen - 8, n - off)
         if (len < 13) return null
-        // emri i pyetjes fillon pas 12 bajteve te kokes DNS
+        // the question name starts after the 12-byte DNS header
         val sb = StringBuilder()
         var i = off + 12
         while (i < off + len) {
@@ -235,8 +239,8 @@ object Packets {
     }
 
     /**
-     * Pergjigje NXDOMAIN ("ky server s'ekziston") per nje kerkese te bllokuar: koka + pyetja,
-     * pa seksione te tjera. null nese pyetja s'mund te lexohet (atehere kerkesa kalon normalisht).
+     * NXDOMAIN answer ("this server doesn't exist") for a blocked request: header + question,
+     * no other sections. null if the question can't be read (the request then passes normally).
      */
     fun nxdomain(b: ByteArray, q: DnsQuery): ByteArray? {
         val off = q.payloadOffset
@@ -248,17 +252,17 @@ object Packets {
             if (l >= 64) return null
             i += l + 1
         }
-        val qEnd = i + 1 + 4                       // 0-ja fundore + QTYPE + QCLASS
+        val qEnd = i + 1 + 4                       // the trailing 0 + QTYPE + QCLASS
         if (i >= end || qEnd > end) return null
         val r = b.copyOfRange(off, qEnd)
-        r[2] = ((r[2].toInt() and 0x79) or 0x80).toByte()   // QR=1, mban OPCODE dhe RD
+        r[2] = ((r[2].toInt() and 0x79) or 0x80).toByte()   // QR=1, keeps OPCODE and RD
         r[3] = 0x83.toByte()                                // RA=1, RCODE=3 (NXDOMAIN)
         r[4] = 0; r[5] = 1                                  // QDCOUNT=1
         for (k in 6 until 12) r[k] = 0                      // AN/NS/AR = 0
         return r
     }
 
-    /** Serverat publike DNS (IPv4) qe app-et perdorin per te anashkaluar DNS-ne e telefonit. */
+    /** Public DNS servers (IPv4) that apps use to bypass the phone's DNS. */
     val PUBLIC_DNS = setOf(
         "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3",
         "9.9.9.9", "149.112.112.112", "9.9.9.11", "149.112.112.11", "208.67.222.222", "208.67.220.220",
@@ -289,8 +293,8 @@ object Packets {
     }
 
     /**
-     * RST+ACK per nje segment TCP IPv4 (lidhja refuzohet menjehere, pa pritje). null per jo-TCP
-     * ose kur vete segmenti eshte RST.
+     * RST+ACK for an IPv4 TCP segment (the connection is refused at once, no waiting). null for non-TCP
+     * or when the segment itself is an RST.
      */
     fun tcpReset(b: ByteArray, n: Int): ByteArray? {
         if (n < 20 || (b[0].toInt() ushr 4) != 4 || proto(b) != 6) return null
@@ -310,9 +314,9 @@ object Packets {
         val p = ByteArray(40)
         p[0] = 0x45; p[3] = 40; p[6] = 0x40; p[8] = 64; p[9] = 6
         System.arraycopy(b, 16, p, 12, 4); System.arraycopy(b, 12, p, 16, 4)
-        // porti: nga serveri te app-i
+        // ports: from the server to the app
         p[20] = b[ihl + 2]; p[21] = b[ihl + 3]; p[22] = b[ihl]; p[23] = b[ihl + 1]
-        if (hasAck) System.arraycopy(b, ihl + 8, p, 24, 4)   // seq = ack-u i app-it
+        if (hasAck) System.arraycopy(b, ihl + 8, p, 24, 4)   // seq = the app's ack
         p[28] = (ackOut ushr 24).toByte(); p[29] = (ackOut ushr 16).toByte(); p[30] = (ackOut ushr 8).toByte(); p[31] = ackOut.toByte()
         p[32] = 0x50; p[33] = 0x14                               // 20 bajte koke, RST|ACK
         val ics = csum(p, 0, 20).inv() and 0xFFFF
@@ -328,8 +332,8 @@ object Packets {
         val p = ByteArray(total)
         p[0] = 0x45; p[2] = (total ushr 8).toByte(); p[3] = total.toByte()
         p[6] = 0x40; p[8] = 64; p[9] = 17
-        System.arraycopy(q.dst, 0, p, 12, 4)   // nga "serveri DNS"
-        System.arraycopy(q.src, 0, p, 16, 4)   // te app-i
+        System.arraycopy(q.dst, 0, p, 12, 4)   // from the "DNS server"
+        System.arraycopy(q.src, 0, p, 16, 4)   // to the app
         var sum = 0
         for (i in 0 until 20 step 2) sum += u16(p, i)
         while (sum ushr 16 != 0) sum = (sum and 0xFFFF) + (sum ushr 16)
@@ -339,7 +343,7 @@ object Packets {
         p[22] = (q.srcPort ushr 8).toByte(); p[23] = q.srcPort.toByte()
         val ul = 8 + plen
         p[24] = (ul ushr 8).toByte(); p[25] = ul.toByte()
-        // checksum UDP = 0 (lejohet ne IPv4)
+        // UDP checksum = 0 (allowed on IPv4)
         System.arraycopy(payload, 0, p, 28, plen)
         return p
     }

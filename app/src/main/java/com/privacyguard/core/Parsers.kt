@@ -6,10 +6,10 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * Lexon tekstin e `dumpsys appops`. I njejti logjike si scripti Python:
- * mban kontekstin Uid -> Package -> Op sipas rreshtave dhe kap rreshtat
- * "Access"/"Reject". Formati ndryshon pak nga versioni ne version, prandaj
- * gjithcka eshte me regex te tolerueshem.
+ * Reads the text of `dumpsys appops`. Same logic as the Python script:
+ * keeps the context Uid -> Package -> Op line by line and captures the
+ * "Access"/"Reject" lines. The format changes a little between versions, so
+ * everything uses tolerant regexes.
  */
 object AppOpsParser {
     private val reUid = Regex("""^\s*Uid[: ]\s*(u(\d+)a(\d+)|u(\d+)s(\d+)|\d+)\b""")
@@ -52,7 +52,7 @@ object AppOpsParser {
         return dt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
     }
 
-    /** Nje rresht i tabeles discrete (Android 16+). Rreshtat me vetem DURATION jane qasje te zgjatura. */
+    /** One row of the discrete table (Android 16+). Rows with only DURATION are long-running accesses. */
     private fun tableRow(row: String, c: Map<String, Int>, out: MutableList<AccessEvent>) {
         val f = row.split('|')
         fun col(name: String) = c[name]?.let { f.getOrNull(it) }?.trim().orEmpty()
@@ -80,8 +80,8 @@ object AppOpsParser {
         var source = "last"
         var cols: Map<String, Int>? = null
         for (line in text.reader().buffered(1 shl 16).lineSequence()) {
-            // Android 16+/17: seksioni discrete eshte tabele "UID|PACKAGE_NAME|...|ACCESS_TIME|...".
-            // Dege shtese; formatet e vjetra me poshte mbeten te pandryshuara.
+            // Android 16+/17: the discrete section is a table "UID|PACKAGE_NAME|...|ACCESS_TIME|...".
+            // Extra branch; the older formats below are unchanged.
             val t = line.trim()
             if (t.startsWith("UID|PACKAGE_NAME|")) {
                 cols = t.split('|').withIndex().associate { it.value to it.index }
@@ -93,8 +93,8 @@ object AppOpsParser {
                 if (t.isEmpty()) continue
                 cols = null
             }
-            // Shpejtesi: cdo regex me poshte provohet vetem kur rreshti mund ta kete (136k rreshta ne Android 17).
-            // Rezultati eshte i njejte; rreshtat qe kapercehen s'mund te perputheshin gjithsesi.
+            // Speed: each regex below is tried only when the line could contain it (136k lines on Android 17).
+            // The result is the same; skipped lines could not have matched anyway.
             if (t.startsWith("discrete accesses", true) || t.startsWith("discrete ops", true) ||
                 t.startsWith("discrete registry", true)
             ) {
@@ -128,7 +128,7 @@ object AppOpsParser {
                 }
                 continue
             }
-            // reOp do qe rreshti te mbaroje me emrin e op-it, ':' ose ')'; "BODY_SENSORS: allow" s'mund te perputhet
+            // reOp needs the line to end with the op name, ':' or ')'; "BODY_SENSORS: allow" can't match
             if (pkg != null && t.isNotEmpty() && t[0] in 'A'..'Z' && t.last().let { it == ':' || it == ')' || it == '_' || it in 'A'..'Z' || it in '0'..'9' })
                 reOp.find(line)?.let { op = it.groupValues[1] }
         }
@@ -136,19 +136,19 @@ object AppOpsParser {
     }
 }
 
-/** Gjen kush po perdor mikrofonin/kameren tani, nga `dumpsys audio` dhe `dumpsys media.camera`. */
+/** Finds who is using the microphone/camera right now, from `dumpsys audio` and `dumpsys media.camera`. */
 object LiveParser {
     private val rePack = Regex("""pack(?:age)?[:=]\s*([A-Za-z0-9_.]+)""", RegexOption.IGNORE_CASE)
     private val reRecEvent = Regex("""\brec\s+(start|update|stop|release)\b.*?\briid:(\d+).*?\bpack:([A-Za-z0-9_.]+)""", RegexOption.IGNORE_CASE)
     private val reCamClient = Regex("""Client\s+package:\s*([A-Za-z0-9_.]+)""")
 
     fun micPackages(audioDump: String): Set<String> {
-        // Seksioni i regjistrimeve aktive; formati ndryshon, prandaj kerkojme "pack:" pas fjales "record"
+        // The active recordings section; the format varies, so we look for "pack:" after the word "record"
         val start = audioDump.indexOf("RecordActivityMonitor").takeIf { it >= 0 }
             ?: audioDump.indexOf("AudioRecordingConfiguration").takeIf { it >= 0 } ?: return emptySet()
         val section = audioDump.substring(start, minOf(audioDump.length, start + 6000))
-        // Android 14+: "rec start/update/stop riid:N ... pack:X" eshte HISTORI (perfshin app-e te fshira).
-        // Aktiv eshte vetem riid qe s'ka "stop/release" pas "start/update".
+        // Android 14+: "rec start/update/stop riid:N ... pack:X" is HISTORY (includes removed apps).
+        // Only a riid without "stop/release" after "start/update" is active.
         val evs = reRecEvent.findAll(section).toList()
         if (evs.isNotEmpty()) {
             val last = LinkedHashMap<String, Pair<String, String>>()

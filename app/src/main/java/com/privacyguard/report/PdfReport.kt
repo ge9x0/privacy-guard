@@ -25,7 +25,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** Raporti PDF, i njejte me ate te scriptit: permbledhje + nje seksion per dite. */
+/** The PDF report, same as the script's: summary + one section per day. */
 class PdfReport(private val names: AppNames, private val modeLabel: String) {
     private val W = 595f; private val H = 842f; private val M = 40f
     private val CW get() = W - 2 * M
@@ -78,7 +78,7 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
     private fun sub(t: String) = text(t, 9f, MUTED)
     private fun note(t: String) = text(t, 7f, MUTED, gapAfter = 2f)
 
-    /** Rreshti me numrat e medhenj. */
+    /** The row with the big numbers. */
     private fun kpis(items: List<Triple<String, String, Int?>>) {
         val h = 52f
         need(h + 6)
@@ -170,7 +170,7 @@ class PdfReport(private val names: AppNames, private val modeLabel: String) {
         val dayStart = d.day.atStartOfDay(z).toInstant().toEpochMilli()
         fun xOf(ts: Long) = x0 + ((ts - dayStart) / 3_600_000f).coerceIn(0f, 24f) / 24f * chartW
 
-        // ekrani i fikur
+        // screen off
         if (d.screen.isNotEmpty()) {
             val off = Paint().apply { color = C_OFF }
             for (i in d.screen.indices) {

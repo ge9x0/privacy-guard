@@ -8,7 +8,7 @@ import com.privacyguard.block.FilterLists
 import com.privacyguard.core.Trackers
 import java.util.zip.ZipFile
 
-/** Reverse engineering vetem-lexim: manifesti i dekoduar dhe serverat/celesat e shkruar ne kod. */
+/** Read-only reverse engineering: the decoded manifest and the servers/keys written in the code. */
 object Inspect {
     data class Flag(val text: String, val bad: Boolean)
     data class Manifest(val xml: String, val flags: List<Flag>, val dangerous: List<String>, val other: List<String>,
@@ -43,7 +43,7 @@ object Inspect {
         return Manifest(Axml.toXml(root), summary(root, target, perms), dang.sorted(), other.sorted(), exported(root, target), deepLinks(root))
     }
 
-    /** Pjesa pa Android (per teste). */
+    /** The part without Android (for tests). */
     fun summary(root: Axml.Node, target: Int, perms: List<String>): List<Flag> {
         val app = root.all("application").firstOrNull()
         val f = ArrayList<Flag>()
@@ -69,7 +69,7 @@ object Inspect {
 
     private val comps = setOf("activity", "activity-alias", "service", "receiver", "provider")
 
-    /** Komponentet qe app-e te tjera mund t'i hapin pa asnje leje. */
+    /** Components other apps can open without any permission. */
     fun exported(root: Axml.Node, target: Int): List<String> {
         val app = root.all("application").firstOrNull() ?: return emptyList()
         return app.children.filter { it.name in comps }.filter { c ->
@@ -87,7 +87,7 @@ object Inspect {
         schemes.flatMap { s -> hosts.map { h -> "$s://$h" } }.asSequence()
     }.filterNot { it.startsWith("http://*") || it.startsWith("https://*") }.distinct().sorted().toList()
 
-    // ---------------------------------------------------------------- serverat dhe celesat
+    // ---------------------------------------------------------------- servers and keys
 
     private val reUrl = Regex("""(?:https?|wss?)://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+""")
     private val tlds = "com|net|org|io|co|app|dev|ai|me|info|biz|cn|ru|de|uk|fr|jp|kr|in|br|us|eu|tv|xyz|cloud|tech|link|site|online|ly|gl|gg|so|to|sh|cc|al|it|es|nl|pl"
@@ -106,7 +106,7 @@ object Inspect {
     private fun candidate(s: String) = s.length in 6..2000 && (s.contains("://") || s.contains('.') || s.startsWith("AIza") ||
         s.contains("AKIA") || s.contains("_live_") || s.contains("xox") || s.contains("PRIVATE KEY") || s.startsWith("eyJ"))
 
-    /** Analizon stringjet (pa Android): `tag` jep etiketen e trackerit/listes per nje host. */
+    /** Analyzes the strings (without Android): `tag` gives the tracker/list label for a host. */
     fun analyze(strings: Collection<String>, tag: (String) -> String?): Strings {
         val hosts = HashMap<String, Int>(); val urls = LinkedHashSet<String>(); val ips = LinkedHashSet<String>()
         val secrets = LinkedHashSet<Secret>()
@@ -124,7 +124,7 @@ object Inspect {
             for (m in reIp.findAll(s)) {
                 val o = m.groupValues.drop(1).map { it.toInt() }
                 if (o.any { it > 255 } || o[0] == 0 || o[0] == 127 || o.all { it < 10 } || o[0] >= 224) continue
-                // vetem ne URL ose si string me vete ("1.2.3.4" / "1.2.3.4:443"); perndryshe zakonisht eshte version
+                // only inside a URL or as a string of its own ("1.2.3.4" / "1.2.3.4:443"); otherwise it is usually a version
                 if (!s.contains("://") && !s.trim().matches(Regex("""[\d.]+(?::\d+)?"""))) continue
                 ips += m.value
             }
