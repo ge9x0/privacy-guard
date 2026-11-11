@@ -86,3 +86,12 @@ ui/MainActivity.kt   ekrani i app-it
 - Një app që do ta anashkalonte vetë regjistrin e Android-it nuk do të dukej.
 - App-et me DNS të vetin të enkriptuar (DoH) nuk duken te "Kujt iu dërgua".
 - Sinjalizimi do të thotë "kontrolloje", jo provë automatike përgjimi.
+
+## Licenca dhe kreditet
+
+Privacy Guard është softuer i lirë nën **GPL-3.0-or-later** (shih `LICENSE`). Kushdo që merr APK-në ka të drejtë të marrë edhe kodin burimor.
+
+- **Nënshkrimet e trackerave** (`app/src/main/res/values/am_trackers.xml`, 989 rreshta) janë kopjuar pa ndryshim nga [App Manager](https://github.com/MuntashirAkon/AppManager) i Muntashir Al-Islam (GPL-3.0-or-later, commit `dc4154f`), që bazohet te databaza e [Exodus Privacy](https://exodus-privacy.eu.org).
+- **libadb-android** nga i njëjti autor (dependency nga JitPack).
+- **Listat e bllokimit** shkarkohen nga [HaGeZi DNS blocklists](https://github.com/hagezi/dns-blocklists) në telefon; nuk përfshihen në kod.
+- Skaneri DEX, firewall-i dhe kapja e DNS-ve që anashkalojnë telefonin janë shkruar për këtë projekt (ide nga App Manager, pa kod të kopjuar).

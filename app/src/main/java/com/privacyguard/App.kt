@@ -60,6 +60,8 @@ object History {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        // Android-i e fshin firewall-in e kernelit ne restartim
+        com.privacyguard.block.Firewall.onBoot(ctx)
         if (Prefs.vpn(ctx) && android.net.VpnService.prepare(ctx) == null) {
             com.privacyguard.vpn.DnsVpnService.start(ctx)
         }

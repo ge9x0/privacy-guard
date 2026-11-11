@@ -114,6 +114,8 @@ class MonitorService : Service() {
             override fun run() {
                 mode = Shell.mode(this@MonitorService, tryConnect = true)
                 updateOngoing()
+                // pas restartimit firewall-i i kernelit eshte bosh: rivendose sapo ka lidhje ADB
+                if (com.privacyguard.block.Firewall.pending(this@MonitorService)) runCatching { com.privacyguard.block.Firewall.sync(this@MonitorService) }
                 worker.postDelayed(this, 15 * 60_000L)
             }
         }, 15 * 60_000L)

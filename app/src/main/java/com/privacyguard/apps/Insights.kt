@@ -31,7 +31,7 @@ object Insights {
     fun onInstalled(ctx: Context, pkg: String) {
         val pi = UserApps.info(ctx, pkg) ?: return
         if (pi.applicationInfo?.let { it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0 } == true) return
-        val sdks = SdkScanner.of(ctx, pi)
+        val sdks = SdkScanner.of(ctx, pi, deep = true)
         val perms = PermGroups.granted(pi).keys.map { it.label } +
             PermGroups.all.filter { g -> pi.requestedPermissions.orEmpty().any { it in g.perms } }.map { it.label }
         val name = AppNames(ctx).name(pkg)
@@ -55,6 +55,32 @@ object Insights {
             if (isEmpty()) append("No app looked worse this week.")
         }
         post(ctx, 2900, "Your weekly privacy score", text)
+    }
+}
+
+/** Skanim i thelle (kodi DEX) i te gjitha app-eve te perdoruesit; progresi ne prefs per UI-ne. */
+class DeepScanWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
+    override suspend fun doWork(): Result {
+        val ctx = applicationContext
+        val pr = ctx.getSharedPreferences("pg_deep", Context.MODE_PRIVATE)
+        val apps = UserApps.list(ctx)
+        pr.edit().putInt("total", apps.size).putInt("done", 0).putBoolean("running", true).apply()
+        val t = System.currentTimeMillis()
+        apps.forEachIndexed { i, pi ->
+            runCatching { SdkScanner.of(ctx, pi, deep = true) }.onFailure { Log.w("PG.Apps", "deep ${pi.packageName}", it) }
+            pr.edit().putInt("done", i + 1).apply()
+        }
+        pr.edit().putBoolean("running", false).putLong("at", System.currentTimeMillis()).apply()
+        Log.i("PG.Apps", "deep scan ${apps.size} apps in ${System.currentTimeMillis() - t} ms")
+        return Result.success()
+    }
+
+    companion object {
+        fun start(ctx: Context) = androidx.work.WorkManager.getInstance(ctx).enqueueUniqueWork(
+            "deep-scan", androidx.work.ExistingWorkPolicy.KEEP, androidx.work.OneTimeWorkRequestBuilder<DeepScanWorker>().build())
+        fun progress(ctx: Context): Triple<Boolean, Int, Int> = ctx.getSharedPreferences("pg_deep", Context.MODE_PRIVATE)
+            .let { Triple(it.getBoolean("running", false), it.getInt("done", 0), it.getInt("total", 0)) }
+        fun lastRun(ctx: Context) = ctx.getSharedPreferences("pg_deep", Context.MODE_PRIVATE).getLong("at", 0L)
     }
 }
 

@@ -49,4 +49,14 @@ class NewFeaturesTest {
         )).map { it.name }
         assertEquals(setOf("AppsFlyer", "Facebook SDK (analytics)", "Google AdMob"), found.toSet())
     }
+
+    @Test fun sameSdkFromTwoListsCountsOnce() {
+        assertEquals(SdkScanner.key("Facebook Audience Network"), SdkScanner.key("Facebook Ads"))
+        assertEquals(SdkScanner.key("Unity Ads"), SdkScanner.key("Unity3d Ads"))
+        assertEquals(SdkScanner.key("Google Crashlytics"), SdkScanner.key("Crashlytics"))
+        assertEquals(SdkScanner.key("Pangle (ByteDance)"), SdkScanner.key("Pangle"))
+        assertEquals(SdkScanner.key("Vungle / Liftoff"), SdkScanner.key("Vungle"))
+        assertEquals(SdkScanner.key("Yandex Ads"), SdkScanner.key("Yandex Ad"))
+        assertTrue(SdkScanner.key("Google AdMob") != SdkScanner.key("Google Firebase Analytics"))
+    }
 }

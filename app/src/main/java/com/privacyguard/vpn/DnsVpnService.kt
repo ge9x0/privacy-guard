@@ -69,16 +69,25 @@ class DnsVpnService : VpnService() {
         runCatching { cm.registerDefaultNetworkCallback(cb); netCb = cb }.onFailure { Log.w(TAG, "netcb", it) }
     }
 
+    /** IP-te e serverave publike DNS qe po kapen (bosh kur kapja eshte fikur). */
+    @Volatile private var bypassIps: Set<String> = emptySet()
+
     private fun startVpn() {
         up = upstream()
-        val pfd = Builder()
+        val b = Builder()
             .setSession("Privacy Guard DNS")
             .addAddress("10.111.222.2", 32)
             .addRoute(FAKE_DNS, 32)
             .addDnsServer(FAKE_DNS)
             .setBlocking(true)
             .addDisallowedApplication(packageName)
-            .establish() ?: return
+        // Kapja e anashkalimit: app-et qe flasin direkt me 8.8.8.8 / 1.1.1.1 ... kalojne nga ne.
+        // Jo kur perdoruesi ka "Private DNS" me emer (atehere sistemi vete perdor keto servera).
+        val pdns = runCatching { android.provider.Settings.Global.getString(contentResolver, "private_dns_mode") }.getOrNull()
+        bypassIps = if (Blocker.antiBypass(this) && pdns != "hostname") Packets.PUBLIC_DNS else emptySet()
+        for (ip in bypassIps) b.addRoute(ip, 32)
+        Log.i(TAG, "start: bypass catcher ${if (bypassIps.isEmpty()) "off (private_dns_mode=$pdns)" else "on, ${bypassIps.size} servers"}")
+        val pfd = b.establish() ?: return
         iface = pfd
         running = true
         isRunning = true
@@ -96,7 +105,8 @@ class DnsVpnService : VpnService() {
             while (running) {
                 val n = try { input.read(buf) } catch (e: Exception) { if (running) Log.w(TAG, "read", e); break }
                 if (n <= 0) continue
-                val q = Packets.parseDnsQuery(buf, n) ?: continue
+                val q = Packets.parseDnsQuery(buf, n)
+                if (q == null) { if (bypassIps.isNotEmpty()) refuseBypass(buf, n, cm, db, output); continue }
                 val pkt = buf.copyOf(n)
                 // uid-i merret MENJEHERE, sa socket-i i app-it eshte ende hapur; me pare merrej
                 // brenda radhes dhe, kur radha vonohej, Android-i kthente -1 (app i panjohur).
@@ -119,6 +129,32 @@ class DnsVpnService : VpnService() {
                 }
             }
         }
+    }
+
+    private val bypassLogged = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /**
+     * Trafik jo-DNS drejt nje serveri publik DNS (DoH ne 443, DoT ne 853): TCP merr RST qe app-i te
+     * kaloje menjehere te DNS-ja e telefonit; UDP (QUIC/DoQ) hidhet. Regjistrohet nje here ne minute.
+     */
+    private fun refuseBypass(buf: ByteArray, n: Int, cm: ConnectivityManager, db: Db, out: FileOutputStream) {
+        val dst = Packets.ipv4Dst(buf, n) ?: return
+        if (dst !in bypassIps) return
+        val syn = Packets.isTcpSyn(buf, n)
+        Packets.tcpReset(buf, n)?.let { rst -> runCatching { synchronized(out) { out.write(rst) } } }
+        if (!syn && Packets.proto(buf) == 6) return
+        val ports = Packets.ports(buf, n) ?: return
+        val uid = runCatching {
+            cm.getConnectionOwnerUid(Packets.proto(buf),
+                InetSocketAddress(InetAddress.getByAddress(buf.copyOfRange(12, 16)), ports.first),
+                InetSocketAddress(InetAddress.getByAddress(buf.copyOfRange(16, 20)), ports.second))
+        }.getOrDefault(-1)
+        val key = "$uid|$dst|${ports.second}"
+        val now = System.currentTimeMillis()
+        if ((bypassLogged.put(key, now) ?: 0L) > now - 60_000) return
+        val what = when (ports.second) { 853 -> "dns-over-tls"; 443 -> "dns-over-https"; else -> "port-${ports.second}" }
+        Log.i(TAG, "bypass refused uid=$uid $dst:${ports.second}")
+        runCatching { db.addConn(ConnRow(now, uid, "$what.$dst", 0, blocked = true, why = "bypass")) }
     }
 
     private fun forward(pkt: ByteArray, q: Packets.DnsQuery, up: InetAddress, out: FileOutputStream) {
@@ -218,6 +254,71 @@ object Packets {
         r[4] = 0; r[5] = 1                                  // QDCOUNT=1
         for (k in 6 until 12) r[k] = 0                      // AN/NS/AR = 0
         return r
+    }
+
+    /** Serverat publike DNS (IPv4) qe app-et perdorin per te anashkaluar DNS-ne e telefonit. */
+    val PUBLIC_DNS = setOf(
+        "8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1", "1.1.1.2", "1.0.0.2", "1.1.1.3", "1.0.0.3",
+        "9.9.9.9", "149.112.112.112", "9.9.9.11", "149.112.112.11", "208.67.222.222", "208.67.220.220",
+        "94.140.14.14", "94.140.15.15", "185.228.168.9", "185.228.169.9", "76.76.2.0", "76.76.10.0",
+        "45.90.28.0", "45.90.30.0", "194.242.2.2", "223.5.5.5", "223.6.6.6", "180.76.76.76",
+    )
+
+    fun proto(b: ByteArray) = b[9].toInt() and 0xFF
+    fun ipv4Dst(b: ByteArray, n: Int): String? =
+        if (n >= 20 && (b[0].toInt() ushr 4) == 4) "${b[16].toInt() and 0xFF}.${b[17].toInt() and 0xFF}.${b[18].toInt() and 0xFF}.${b[19].toInt() and 0xFF}" else null
+    fun ports(b: ByteArray, n: Int): Pair<Int, Int>? {
+        val ihl = (b[0].toInt() and 0x0F) * 4
+        if (n < ihl + 4 || (proto(b) != 6 && proto(b) != 17)) return null
+        return u16(b, ihl) to u16(b, ihl + 2)
+    }
+    fun isTcpSyn(b: ByteArray, n: Int): Boolean {
+        val ihl = (b[0].toInt() and 0x0F) * 4
+        return proto(b) == 6 && n >= ihl + 14 && (b[ihl + 13].toInt() and 0x12) == 0x02
+    }
+
+    private fun csum(b: ByteArray, off: Int, len: Int, start: Int = 0): Int {
+        var sum = start
+        var i = off
+        while (i + 1 < off + len) { sum += u16(b, i); i += 2 }
+        if (i < off + len) sum += (b[i].toInt() and 0xFF) shl 8
+        while (sum ushr 16 != 0) sum = (sum and 0xFFFF) + (sum ushr 16)
+        return sum
+    }
+
+    /**
+     * RST+ACK per nje segment TCP IPv4 (lidhja refuzohet menjehere, pa pritje). null per jo-TCP
+     * ose kur vete segmenti eshte RST.
+     */
+    fun tcpReset(b: ByteArray, n: Int): ByteArray? {
+        if (n < 20 || (b[0].toInt() ushr 4) != 4 || proto(b) != 6) return null
+        val ihl = (b[0].toInt() and 0x0F) * 4
+        if (n < ihl + 20) return null
+        val flags = b[ihl + 13].toInt() and 0xFF
+        if (flags and 0x04 != 0) return null
+        val doff = ((b[ihl + 12].toInt() and 0xFF) ushr 4) * 4
+        val totalIn = u16(b, 2)
+        var segLen = (minOf(totalIn, n) - ihl - doff).coerceAtLeast(0)
+        if (flags and 0x02 != 0) segLen++            // SYN
+        if (flags and 0x01 != 0) segLen++            // FIN
+        val seqIn = ((b[ihl + 4].toLong() and 0xFF) shl 24) or ((b[ihl + 5].toLong() and 0xFF) shl 16) or
+            ((b[ihl + 6].toLong() and 0xFF) shl 8) or (b[ihl + 7].toLong() and 0xFF)
+        val ackOut = (seqIn + segLen) and 0xFFFFFFFFL
+        val hasAck = flags and 0x10 != 0
+        val p = ByteArray(40)
+        p[0] = 0x45; p[3] = 40; p[6] = 0x40; p[8] = 64; p[9] = 6
+        System.arraycopy(b, 16, p, 12, 4); System.arraycopy(b, 12, p, 16, 4)
+        // porti: nga serveri te app-i
+        p[20] = b[ihl + 2]; p[21] = b[ihl + 3]; p[22] = b[ihl]; p[23] = b[ihl + 1]
+        if (hasAck) System.arraycopy(b, ihl + 8, p, 24, 4)   // seq = ack-u i app-it
+        p[28] = (ackOut ushr 24).toByte(); p[29] = (ackOut ushr 16).toByte(); p[30] = (ackOut ushr 8).toByte(); p[31] = ackOut.toByte()
+        p[32] = 0x50; p[33] = 0x14                               // 20 bajte koke, RST|ACK
+        val ics = csum(p, 0, 20).inv() and 0xFFFF
+        p[10] = (ics ushr 8).toByte(); p[11] = ics.toByte()
+        val pseudo = csum(p, 12, 8, 6 + 20)                     // src+dst, protokolli, gjatesia TCP
+        val tcs = csum(p, 20, 20, pseudo).inv() and 0xFFFF
+        p[36] = (tcs ushr 8).toByte(); p[37] = tcs.toByte()
+        return p
     }
 
     fun buildUdpReply(q: DnsQuery, payload: ByteArray, plen: Int): ByteArray {

@@ -104,28 +104,81 @@ object SdkScanner {
         "com.incognia." to Sdk("Incognia", Trackers.BROKER),
     )
 
-    fun match(strings: Collection<String>): List<Sdk> =
-        sig.filter { (p, _) -> strings.any { it.startsWith(p) } }.map { it.second }.distinct()
+    fun match(strings: Collection<String>, extra: List<Pair<String, Sdk>> = emptyList()): List<Sdk> {
+        val hits = (sig + extra).filter { (p, _) -> strings.any { it.startsWith(p) || it == p.trimEnd('.') } }.map { it.second }
+        // e njejta kompani nga dy lista: mbaj emrin tone (me kategori)
+        return hits.distinctBy { key(it.name) }
+    }
 
-    fun scan(pi: PackageInfo): List<Sdk> {
+    /** "Facebook Ads" = "Facebook Audience Network", "Unity3d Ads" = "Unity Ads", "Crashlytics" = "Google Crashlytics"... */
+    fun key(name: String): String {
+        var n = name.lowercase().replace(Regex("""\(.*?\)"""), "").substringBefore(" / ").replace("google ", "")
+            .replace("unity3d", "unity").replace(Regex("[^a-z0-9 ]"), "").trim().trimEnd('s')
+        if (n == "facebook ad") n = "facebook audience network"
+        return n
+    }
+
+    /**
+     * Lista e App Manager (GPL-3.0-or-later, mbi bazen e Exodus Privacy): 989 nenshkrime. Shih
+     * res/values/am_trackers.xml dhe LICENSE.
+     */
+    @Volatile private var am: List<Pair<String, Sdk>>? = null
+    fun amList(ctx: Context): List<Pair<String, Sdk>> = am ?: run {
+        val r = ctx.resources
+        val sigs = r.getStringArray(com.privacyguard.R.array.tracker_signatures)
+        val names = r.getStringArray(com.privacyguard.R.array.tracker_names)
+        // App Manager shenon me "²" bibliotekat qe s'jane trackera (Play Billing, ML Kit...): kapercehen
+        sigs.indices.filter { !names.getOrElse(it) { "" }.startsWith("²") }
+            .map { sigs[it] to Sdk(names.getOrElse(it) { sigs[it] }, categoryFor(names.getOrElse(it) { "" })) }.also { am = it }
+    }
+
+    fun categoryFor(name: String): String {
+        val n = name.lowercase()
+        return when {
+            sig.any { it.second.name.lowercase().startsWith(n.substringBefore(' ')) } ->
+                sig.first { it.second.name.lowercase().startsWith(n.substringBefore(' ')) }.second.category
+            listOf("ads", "admob", "advert", "mopub", "adcolony", "monetiz", "banner", "offerwall").any { it in n } || n.startsWith("ad") -> Trackers.ADS
+            listOf("location", "geo", "places", "beacon").any { it in n } -> Trackers.BROKER
+            listOf("attribution", "install", "deep link", "deeplink").any { it in n } -> Trackers.ATTR
+            else -> Trackers.ANALYTICS
+        }
+    }
+
+    fun scan(pi: PackageInfo): List<Sdk> = match(manifestStrings(pi))
+
+    private fun manifestStrings(pi: PackageInfo): Set<String> {
         val s = HashSet<String>()
         pi.activities?.forEach { s += it.name }
         pi.receivers?.forEach { s += it.name }
         pi.providers?.forEach { s += it.name }
         pi.services?.forEach { sv -> s += sv.name; sv.metaData?.keySet()?.forEach { k -> s += k.substringAfter("com.google.firebase.components:") } }
         pi.applicationInfo?.metaData?.keySet()?.let { s += it }
-        return match(s)
+        return s
     }
+
+    /** Skanim i thelle: manifesti + paketat e kodit (DEX). Disa sekonda per app-et e medha. */
+    fun deepScan(ctx: Context, pi: PackageInfo): List<Sdk> {
+        val ai = pi.applicationInfo ?: return scan(pi)
+        val apks = listOfNotNull(ai.sourceDir) + ai.splitSourceDirs.orEmpty()
+        val strings = manifestStrings(pi) + DexScan.packages(apks)
+        return match(strings, amList(ctx))
+    }
+
+    fun isDeep(ctx: Context, pkg: String) = p(ctx).getString(pkg, null)?.startsWith("deep:") == true
 
     private fun p(ctx: Context) = ctx.getSharedPreferences("pg_sdk", Context.MODE_PRIVATE)
 
-    /** Me cache sipas versionit; skanimi i plote i ~100 app-eve zgjat disa sekonda. */
-    fun of(ctx: Context, pi: PackageInfo): List<Sdk> {
+    /** Me cache sipas versionit. Rezultati i skanimit te thelle (DEX) ka perparesi kur ekziston. */
+    fun of(ctx: Context, pi: PackageInfo, deep: Boolean = false): List<Sdk> {
         val key = "${pi.longVersionCode}:${pi.lastUpdateTime}"
         val c = p(ctx).getString(pi.packageName, null)
-        if (c != null && c.substringBefore('|') == key) return decode(c.substringAfter('|'))
-        val r = scan(pi)
-        p(ctx).edit().putString(pi.packageName, key + "|" + r.joinToString(";") { "${it.name}~${it.category}" }).apply()
+        if (c != null) {
+            val isDeep = c.startsWith("deep:")
+            val k = c.removePrefix("deep:").substringBefore('|')
+            if (k == key && (isDeep || !deep)) return decode(c.substringAfter('|'))
+        }
+        val r = if (deep) deepScan(ctx, pi) else scan(pi)
+        p(ctx).edit().putString(pi.packageName, (if (deep) "deep:" else "") + key + "|" + r.joinToString(";") { "${it.name}~${it.category}" }).apply()
         return r
     }
 

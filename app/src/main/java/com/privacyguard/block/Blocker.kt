@@ -25,6 +25,9 @@ object Blocker {
 
     // ------------------------------------------------------------------ DNS
     fun trackersOn(ctx: Context) = p(ctx).getBoolean("trackers", false)
+    /** Ndal app-et qe perdorin DNS-ne e tyre (DoH/DoT, 8.8.8.8 e shkruar ne kod). */
+    fun antiBypass(ctx: Context) = p(ctx).getBoolean("antibypass", true)
+    fun setAntiBypass(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("antibypass", v).apply()
     fun setTrackers(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("trackers", v).apply()
 
     fun apps(ctx: Context): Set<String> = p(ctx).getStringSet("apps", emptySet())!!.toSet()
@@ -55,6 +58,17 @@ object Blocker {
         "mtalk.google.com", "android.clients.google.com", "play.googleapis.com",
     )
 
+    /**
+     * Serverat e DNS-se se enkriptuar (DoH/DoT). Nje app qe i perdor anashkalon DNS-ne e telefonit,
+     * pra edhe bllokimin; kur s'i gjen, kthehet te DNS-ja normale. Shfletuesit e bejne vete kete.
+     */
+    val dohHosts = setOf(
+        "dns.google", "dns64.dns.google", "cloudflare-dns.com", "mozilla.cloudflare-dns.com", "chrome.cloudflare-dns.com",
+        "one.one.one.one", "1dot1dot1dot1.cloudflare-dns.com", "dns.quad9.net", "dns9.quad9.net", "dns11.quad9.net",
+        "doh.opendns.com", "dns.adguard-dns.com", "dns.adguard.com", "dns.nextdns.io", "doh.cleanbrowsing.org",
+        "dns.mullvad.net", "doh.dns.sb", "dns.alidns.com", "doh.pub", "dns.twnic.tw", "doh.libredns.gr",
+    )
+
     /** Arsyeja e bllokimit, ose null nese kerkesa lejohet. Thirret per cdo kerkese DNS. */
     fun dnsVerdict(ctx: Context, uid: Int, host: String): String? {
         val h = host.lowercase().trimEnd('.')
@@ -64,6 +78,7 @@ object Blocker {
         val al = allowed(ctx)
         if (al.isNotEmpty() && sx.any { it in al }) return null
         if (h in essential) return null
+        if (antiBypass(ctx) && h in dohHosts) return "bypass"
         val pk = if (uid >= 0) pkgsOf(ctx, uid) else emptyList()
         if (uid >= 0) {
             val ap = apps(ctx)
@@ -86,6 +101,7 @@ object Blocker {
         why == "domain" -> "blocked domain"
         why == "app" -> "app's internet blocked"
         why == "background" -> "background internet blocked"
+        why == "bypass" -> "private DNS bypass stopped"
         why == "tracker" -> "third-party tracker"
         why.startsWith("list:") -> FilterLists.nameOf(why.removePrefix("list:")) + " list"
         else -> why

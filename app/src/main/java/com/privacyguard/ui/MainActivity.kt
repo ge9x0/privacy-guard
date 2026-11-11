@@ -139,8 +139,11 @@ private fun Home() {
     }
     fun blockNet(pkg: String) {
         Blocker.setApp(ctx, pkg, true); blockTick++
-        msg = if (vpn) "Internet blocked for this app (DNS). It can take a few minutes for cached addresses to expire."
-        else "Saved. Blocking only works while the local VPN is on (Setup → Record destinations)."
+        work("Blocking internet") {
+            com.privacyguard.block.Firewall.sync(ctx)?.let { "$it All its traffic is cut, not only DNS." }
+                ?: if (vpn) "Internet blocked by DNS. Connect Wireless debugging to also cut its direct connections (firewall)."
+                else "Saved. Turn on the local VPN, or connect Wireless debugging for the firewall."
+        }
     }
     fun blockHost(h: String) {
         Blocker.setHost(ctx, h, true); blockTick++
@@ -225,6 +228,8 @@ private fun Home() {
         if (tab == 3) {
         FilterListsCard(vpn, blockTick, busy == null, onChange = { blockTick++ },
             onUpdate = { work("Downloading block lists") { com.privacyguard.block.FilterLists.update(ctx, force = true) } })
+        FirewallCard(blockTick, busy == null, onChange = { blockTick++ },
+            onSync = { work("Applying firewall") { com.privacyguard.block.Firewall.sync(ctx) ?: "Connect Wireless debugging first (Today → Setup → Full access, option B)." } })
         BgBlockCard(blockTick, onChange = { blockTick++ })
         BlockSection(vpn, blockTick, onChange = { blockTick++ }, onRestore = { key ->
             work("Restoring") {
@@ -275,7 +280,7 @@ private fun Home() {
                         work("Connecting") {
                             if (Shell.adbConnected(ctx, true)) {
                                 android.util.Log.i("PG.Shell", "Reconnect: connected\n" + Shell.selfGrant(ctx))
-                                "Connected over Wireless debugging."
+                                "Connected over Wireless debugging. " + (com.privacyguard.block.Firewall.sync(ctx) ?: "")
                             } else "Not connected. Is Wireless debugging on?"
                         }
                     }) { Text("Reconnect") }
@@ -307,6 +312,8 @@ private fun Home() {
         }
         Text("A report is created automatically every night at 23:50 and saved to Download/PrivacyGuard.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Hint("Privacy Guard is free software under GPL-3.0-or-later. Tracker signatures from App Manager by Muntashir Al-Islam " +
+            "(github.com/MuntashirAkon/AppManager), based on Exodus Privacy. Block lists by HaGeZi (github.com/hagezi/dns-blocklists).")
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -566,7 +573,10 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
         if (apps.isNotEmpty()) { HorizontalDivider(); Text("Apps without internet", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
         for (a in apps) Row(verticalAlignment = Alignment.CenterVertically) {
             Text(an.name(a), fontSize = 13.sp, modifier = Modifier.weight(1f))
-            TextButton(onClick = { Blocker.setApp(ctx, a, false); onChange() }) { Text("Remove", fontSize = 12.sp) }
+            TextButton(onClick = {
+                Blocker.setApp(ctx, a, false); onChange()
+                kotlin.concurrent.thread { com.privacyguard.block.Firewall.sync(ctx) }
+            }) { Text("Remove", fontSize = 12.sp) }
         }
         if (hosts.isNotEmpty()) { HorizontalDivider(); Text("Blocked domains", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
         for (h in hosts) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -759,7 +769,21 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
 
     SectionCard {
         Title("Tracker SDKs inside apps")
-        Hint("Found in each app's code manifest, like Exodus Privacy does. An SDK inside does not mean it is active, but it can send data whenever the app runs.")
+        Hint("Found in each app's manifest and, after a deep scan, in its code (989 signatures from App Manager / Exodus Privacy). An SDK inside does not mean it is active, but it can send data whenever the app runs.")
+        val deep = com.privacyguard.apps.DeepScanWorker
+        var prog by remember { mutableStateOf(deep.progress(ctx)) }
+        LaunchedEffect(prog.first) { while (prog.first) { kotlinx.coroutines.delay(1500); prog = deep.progress(ctx); if (!prog.first) onChange() } }
+        if (prog.first) {
+            androidx.compose.material3.LinearProgressIndicator(progress = { if (prog.third > 0) prog.second / prog.third.toFloat() else 0f }, modifier = Modifier.fillMaxWidth())
+            Hint("Deep scan: ${prog.second} of ${prog.third} apps. You can leave this screen.")
+        } else {
+            val at = deep.lastRun(ctx)
+            OutlinedButton(onClick = { deep.start(ctx); prog = Triple(true, 0, prog.third) }) {
+                Text(if (at == 0L) "Deep scan (reads each app's code)" else "Deep scan again")
+            }
+            if (at > 0) Hint("Last deep scan: " + java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("dd.MM HH:mm")))
+        }
         if (dd.sdks.isEmpty()) Text("No known tracker SDKs found.", fontSize = 13.sp, color = GREEN)
         for ((pkg, list) in dd.sdks.take(25)) {
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
@@ -859,6 +883,39 @@ private fun BgBlockCard(tick: Int, onChange: () -> Unit) {
         for (p in bg) Row(verticalAlignment = Alignment.CenterVertically) {
             Text(an.name(p), fontSize = 13.sp, modifier = Modifier.weight(1f))
             TextButton(onClick = { Blocker.setBgApp(ctx, p, false); onChange() }) { Text("Remove", fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun FirewallCard(tick: Int, enabled: Boolean, onChange: () -> Unit, onSync: () -> Unit) {
+    val ctx = LocalContext.current
+    val fw = com.privacyguard.block.Firewall
+    val applied = remember(tick) { fw.applied(ctx) }
+    val want = remember(tick) { Blocker.apps(ctx) }
+    val pending = remember(tick) { fw.pending(ctx) }
+    val anti = remember(tick) { Blocker.antiBypass(ctx) }
+    SectionCard {
+        Title("Full blocking")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Firewall for “Apps without internet”", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Hint("Android's own kernel firewall cuts ALL traffic of those apps, including hardcoded IPs and their own encrypted DNS. Needs Wireless debugging to switch on; after a restart it is applied again on the next Reconnect.")
+            }
+        }
+        when {
+            want.isEmpty() -> Text("No apps blocked. Use Block… → Block this app's internet on an alert.", fontSize = 12.sp)
+            !pending -> Text("Active for ${applied.size} app(s).", fontSize = 12.sp, color = GREEN)
+            else -> Text("Not active for ${want.size - applied.intersect(want).size} app(s) (DNS block only for now).", fontSize = 12.sp, color = ORANGE)
+        }
+        if (want.isNotEmpty()) OutlinedButton(onClick = onSync, enabled = enabled) { Text(if (pending) "Apply firewall now" else "Re-apply") }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Stop DNS bypass", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Hint("Apps that talk straight to 8.8.8.8, 1.1.1.1, Quad9 and other public DNS, or use encrypted DNS (DoH/DoT), are sent back to the phone's DNS, so blocking and the DNS log still see them. Turned off automatically if Private DNS is set to a hostname. Takes effect when the VPN restarts.")
+            }
+            Switch(checked = anti, onCheckedChange = { Blocker.setAntiBypass(ctx, it); onChange() })
         }
     }
 }

@@ -21,6 +21,15 @@ class TimingReceiver : BroadcastReceiver() {
             try {
                 var t = System.currentTimeMillis()
                 fun lap(n: String) { val now = System.currentTimeMillis(); Log.i("PG.Time", "$n ${now - t} ms"); t = now }
+                intent.getStringExtra("deep")?.let { list ->
+                    for (pkg in list.split(',')) {
+                        val pi = com.privacyguard.apps.UserApps.info(ctx, pkg) ?: continue
+                        val m = com.privacyguard.apps.SdkScanner.scan(pi).size
+                        val d = com.privacyguard.apps.SdkScanner.deepScan(ctx, pi)
+                        Log.i("PG.Time", "deep $pkg manifest=$m deep=${d.size}: ${d.joinToString { it.name }}"); lap("deep $pkg")
+                    }
+                    return@thread
+                }
                 if (intent.getBooleanExtra("lists", false)) {
                     Log.i("PG.Time", com.privacyguard.block.FilterLists.update(ctx, force = true)); lap("lists update")
                     for (h in listOf("t.appsflyersdk.com", "graph.facebook.com", "i.instagram.com", "googleads.g.doubleclick.net", "www.google.com"))
