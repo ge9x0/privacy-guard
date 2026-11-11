@@ -93,9 +93,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val RED = Color(0xFFC62828)
-private val ORANGE = Color(0xFFE65100)
-private val GREEN = Color(0xFF2E7D32)
+internal val RED = Color(0xFFC62828)
+internal val ORANGE = Color(0xFFE65100)
+internal val GREEN = Color(0xFF2E7D32)
 
 @Composable
 private fun Home() {
@@ -321,7 +321,7 @@ private fun Home() {
         Text("A report is created automatically every night at 23:50 and saved to Download/PrivacyGuard.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Hint("Privacy Guard is free software under GPL-3.0-or-later. Tracker signatures from App Manager by Muntashir Al-Islam " +
-            "(github.com/MuntashirAkon/AppManager), based on Exodus Privacy. Block lists by HaGeZi (github.com/hagezi/dns-blocklists).")
+            "(github.com/MuntashirAkon/AppManager), based on Exodus Privacy. Block lists by HaGeZi (github.com/hagezi/dns-blocklists). Debloat list: android-debloat-list by Muntashir Al-Islam and contributors (AGPL-3.0).")
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -357,13 +357,13 @@ private fun HistoryCard(enabled: Boolean, onClear: () -> Unit) {
 }
 
 @Composable
-private fun Title(t: String) = Text(t, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+internal fun Title(t: String) = Text(t, fontSize = 17.sp, fontWeight = FontWeight.Bold)
 
 @Composable
-private fun Hint(t: String) = Text(t, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+internal fun Hint(t: String) = Text(t, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
 @Composable
-private fun Chip(t: String, c: Color?, small: Boolean = false) {
+internal fun Chip(t: String, c: Color?, small: Boolean = false) {
     val col = c ?: MaterialTheme.colorScheme.onSurfaceVariant
     Text(t, color = col, fontSize = if (small) 11.sp else 12.sp, fontWeight = FontWeight.SemiBold,
         modifier = Modifier.background(col.copy(alpha = 0.12f), RoundedCornerShape(50))
@@ -371,7 +371,7 @@ private fun Chip(t: String, c: Color?, small: Boolean = false) {
 }
 
 @Composable
-private fun Banner(t: String, c: Color?, action: (@Composable () -> Unit)? = null) {
+internal fun Banner(t: String, c: Color?, action: (@Composable () -> Unit)? = null) {
     val col = c ?: MaterialTheme.colorScheme.onSurface
     Row(Modifier.fillMaxWidth().background(col.copy(alpha = 0.08f), RoundedCornerShape(12.dp)).padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
@@ -434,7 +434,7 @@ private fun openPdf(ctx: android.content.Context, uri: android.net.Uri) {
 }
 
 @Composable
-private fun SectionCard(content: @Composable () -> Unit) {
+internal fun SectionCard(content: @Composable () -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { content() }
     }
@@ -845,6 +845,8 @@ private fun AppsTab(tick: Int, enabled: Boolean, onWork: (String, suspend () -> 
             }) { Text("Give back", fontSize = 12.sp) }
         }
     }
+    InspectCard()
+    DebloatCard(tick, enabled, onWork, onManual, onChange)
 }
 
 // ======================================================================== Blocking tab

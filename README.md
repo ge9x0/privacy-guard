@@ -94,4 +94,5 @@ Privacy Guard është softuer i lirë nën **GPL-3.0-or-later** (shih `LICENSE`)
 - **Nënshkrimet e trackerave** (`app/src/main/res/values/am_trackers.xml`, 989 rreshta) janë kopjuar pa ndryshim nga [App Manager](https://github.com/MuntashirAkon/AppManager) i Muntashir Al-Islam (GPL-3.0-or-later, commit `dc4154f`), që bazohet te databaza e [Exodus Privacy](https://exodus-privacy.eu.org).
 - **libadb-android** nga i njëjti autor (dependency nga JitPack).
 - **Listat e bllokimit** shkarkohen nga [HaGeZi DNS blocklists](https://github.com/hagezi/dns-blocklists) në telefon; nuk përfshihen në kod.
+- **Lista e debloater-it** (`app/src/main/assets/debloat/*.json`) është kopjuar e pandryshuar nga [android-debloat-list](https://github.com/MuntashirAkon/android-debloat-list) (commit 10c8249), © Muntashir Al-Islam dhe kontribuesit, nën **AGPL-3.0** (shih `assets/debloat/COPYING` dhe `NOTICE.txt`). AGPL-3.0 është e pajtueshme me GPL-3.0 (neni 13).
 - Skaneri DEX, firewall-i dhe kapja e DNS-ve që anashkalojnë telefonin janë shkruar për këtë projekt (ide nga App Manager, pa kod të kopjuar).

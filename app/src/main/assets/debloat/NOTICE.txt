@@ -1,0 +1,4 @@
+The JSON files in this folder are copied unchanged from android-debloat-list by Muntashir Al-Islam
+and contributors (https://github.com/MuntashirAkon/android-debloat-list, commit
+10c82498154523d29ba0f268e4ab8316ab19c16b). They are licensed under the GNU Affero General Public
+License v3.0 (see COPYING in this folder), not under Privacy Guard's GPL-3.0-or-later.
