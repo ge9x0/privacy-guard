@@ -294,6 +294,14 @@ private fun Home() {
                     monitor = it; Prefs.setMonitor(ctx, it)
                     if (it) MonitorService.start(ctx) else MonitorService.stop(ctx)
                 }
+                var clip by remember { mutableStateOf(Prefs.clipAlerts(ctx)) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Clipboard alerts", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Hint("Notify when an app reads what you copied while it is not on screen. Your keyboard and system apps are ignored.")
+                    }
+                    Switch(checked = clip, onCheckedChange = { clip = it; Prefs.setClipAlerts(ctx, it) })
+                }
             }
 
             Step("4. Record destinations (local VPN)", vpn,

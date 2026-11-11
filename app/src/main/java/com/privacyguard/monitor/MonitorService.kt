@@ -57,6 +57,47 @@ class MonitorService : Service() {
         override fun onReceive(c: Context, i: Intent) { worker.post { sampleScreen() } }
     }
 
+    private var clipSince = 0L
+    private val clipNotified = HashMap<String, Long>()
+
+    /** Clipboard: lexo op-in READ_CLIPBOARD dhe njofto per leximet jashte ekranit. */
+    private val clipWatch = object : Runnable {
+        override fun run() {
+            val on = getSystemService(android.os.PowerManager::class.java).isInteractive
+            if (com.privacyguard.Prefs.clipAlerts(this@MonitorService) && mode != Mode.LIMITED) runCatching { checkClipboard() }
+                .onFailure { Log.w(TAG, "clip", it) }
+            worker.postDelayed(this, if (on) 20_000L else 60_000L)
+        }
+    }
+
+    private fun checkClipboard() {
+        val out = Shell.run(this, "dumpsys appops --op READ_CLIPBOARD", mode) ?: return
+        val evs = com.privacyguard.core.AppOpsParser.parse(out).filter { it.op == "READ_CLIPBOARD" }
+        val now = System.currentTimeMillis()
+        if (clipSince == 0L) { clipSince = now; return }          // hera e pare: mos njofto historine
+        val hits = ClipWatch.newHits(evs, clipSince, ClipWatch.ignorer(this))
+        clipSince = maxOf(clipSince, evs.maxOfOrNull { it.ts } ?: clipSince)
+        if (hits.isEmpty()) return
+        runCatching { db.addAccess(hits.map { it.e }) }
+        for (h in hits.filter { !it.refused }) {
+            val pkg = h.e.pkg
+            if ((clipNotified[pkg] ?: 0L) > now - 10 * 60_000L) continue
+            clipNotified[pkg] = now
+            val t = java.time.Instant.ofEpochMilli(h.e.ts).atZone(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+            val n = Notification.Builder(this, App.CH_ALERTS)
+                .setSmallIcon(R.drawable.ic_launcher)
+                .setContentTitle("Clipboard read in the background")
+                .setContentText("${names.name(pkg)} read what you copied at $t while it was not on screen.")
+                .setStyle(Notification.BigTextStyle().bigText("${names.name(pkg)} read what you copied at $t while it was not on screen. " +
+                    "Copied passwords, codes or addresses can be read this way."))
+                .setContentIntent(openApp()).setAutoCancel(true).build()
+            Log.i(TAG, "clip alert $pkg")
+            getSystemService(NotificationManager::class.java).notify(4000 + (pkg.hashCode() and 0xfff), n)
+        }
+        hits.filter { it.refused }.forEach { Log.i(TAG, "clip refused by Android: ${it.e.pkg}") }
+    }
+
     private val heartbeat = object : Runnable {
         override fun run() {
             sampleScreen()
@@ -108,6 +149,7 @@ class MonitorService : Service() {
             mode = Shell.mode(this, tryConnect = true)
             updateOngoing()
             heartbeat.run()
+            clipWatch.run()
             onMic(getSystemService(AudioManager::class.java).activeRecordingConfigurations.isNotEmpty())
         }
         worker.postDelayed(object : Runnable {

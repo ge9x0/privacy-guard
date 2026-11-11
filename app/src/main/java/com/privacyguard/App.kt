@@ -43,6 +43,8 @@ object Prefs {
     fun vpn(ctx: Context) = p(ctx).getBoolean("vpn", false)
     fun setVpn(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("vpn", v).apply()
     /** "Clear history": asgje para ketij momenti nuk mblidhet me (Android-i vete mban 7 dite). */
+    fun clipAlerts(ctx: Context) = p(ctx).getBoolean("clip", true)
+    fun setClipAlerts(ctx: Context, v: Boolean) = p(ctx).edit().putBoolean("clip", v).apply()
     fun since(ctx: Context) = p(ctx).getLong("since", 0L)
     fun setSince(ctx: Context, v: Long) = p(ctx).edit().putLong("since", v).apply()
 }
