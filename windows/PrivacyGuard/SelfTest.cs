@@ -37,6 +37,7 @@ public static class SelfTest
         for (int t = 0; t < names.Length; t++)
         {
             w.Select(t);
+            await w.Refresh();
             await Settle(w);
             if (t == 1) { foreach (var x in Expanders(w.CurrentPanel)) x.IsExpanded = true; await Settle(w); }
             Hi(w.CurrentPanel, Path.Combine(dir, $"reel-{t + 1}-{names[t]}.png"));

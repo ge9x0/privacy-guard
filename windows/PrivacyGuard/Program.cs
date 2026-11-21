@@ -46,7 +46,8 @@ public static class Program
         Microsoft.Win32.SystemEvents.SessionSwitch += (_, e) =>
             Native.Locked = e.Reason is Microsoft.Win32.SessionSwitchReason.SessionLock or Microsoft.Win32.SessionSwitchReason.ConsoleDisconnect or Microsoft.Win32.SessionSwitchReason.RemoteDisconnect;
 
-        if (Prefs.Monitor) Monitor.Start(enableDns: Admin);
+        // the self-test shows only the example data, not the build server's own programs
+        if (Prefs.Monitor && selftest < 0) Monitor.Start(enableDns: Admin);
         Monitor.SensorOn += a => app.Dispatcher.BeginInvoke(() => trayIcon.SensorOn(a));
         Monitor.Broker += (q, h) => app.Dispatcher.BeginInvoke(() => trayIcon.Broker(q, h));
         Monitor.Changed += () => app.Dispatcher.BeginInvoke(win.OnDataChanged);
