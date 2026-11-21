@@ -92,6 +92,25 @@ widget/    home-screen widget and Quick Settings tile
 - Without the VPN, the app cannot tell which servers an app contacted.
 - An alert means "worth a look", not automatic proof of spying.
 
+## Windows version
+
+`windows/` holds a Windows 10/11 version (.NET 8, WPF) with the same four tabs: Today, Activity, Apps, Blocking.
+Download `PrivacyGuard-windows-x64.exe` from the [releases](https://github.com/ge9x0/privacy-guard/releases) (one file, nothing to install).
+
+- **Without administrator rights (Limited):** records every use of the microphone, camera, location and screen capture
+  from Windows' own privacy records, with whether the program was in front and whether you were at the PC. Windows itself keeps only the last use.
+- **Full access (administrator, “Restart with full access”):** also turns on Windows' DNS client log, so every server name is
+  shown with the program that asked for it; trackers and data brokers are flagged; blocking works.
+- **Blocking:** a Windows Firewall rule per program, and domains blocked through Privacy Guard's own section of the hosts file.
+- **Apps tab:** spyware check (autostart, scheduled tasks, services, remote-control and monitoring tools, browser extensions,
+  proxy, root certificates, Remote Desktop, Defender), privacy score per program, Windows privacy settings, debloater for Store apps.
+- Tray icon and notifications; optional start with Windows (scheduled task, no prompt at logon).
+
+Every build runs on GitHub's Windows machines as administrator: unit tests, tests against the real registry, firewall, hosts file and
+DNS log, then `PrivacyGuard.exe --selftest`, which opens every tab, presses every button and saves screenshots.
+
+Build on any OS: `cd windows && dotnet publish PrivacyGuard -c Release -r win-x64 --self-contained -p:PublishSingleFile=true`.
+
 ## License and credits
 
 Privacy Guard is free software under **GPL-3.0-or-later** (see `LICENSE`).
