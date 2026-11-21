@@ -91,9 +91,18 @@ public class WindowsTests(ITestOutputHelper log)
         {
             Hosts.Add(d);
             Assert.Contains(d, Hosts.Blocked());
-            var ips = Dns.GetHostAddresses(d);
-            log.WriteLine(string.Join(",", ips.Select(i => i.ToString())));
-            Assert.Contains(IPAddress.Any, ips);
+            // Windows answers a 0.0.0.0 hosts entry either with 0.0.0.0 or with "no address": both mean blocked
+            IPAddress[] ips;
+            try { ips = Dns.GetHostAddresses(d); } catch (System.Net.Sockets.SocketException) { ips = Array.Empty<IPAddress>(); }
+            log.WriteLine("resolved: " + string.Join(",", ips.Select(i => i.ToString())));
+            Assert.All(ips, i => Assert.True(IPAddress.Any.Equals(i) || IPAddress.IPv6Any.Equals(i)));
+            // and a real domain blocked the same way stops resolving to its real address
+            Hosts.Add("example.com");
+            IPAddress[] ex;
+            try { ex = Dns.GetHostAddresses("example.com"); } catch (System.Net.Sockets.SocketException) { ex = Array.Empty<IPAddress>(); }
+            log.WriteLine("example.com: " + string.Join(",", ex.Select(i => i.ToString())));
+            Assert.All(ex, i => Assert.True(IPAddress.Any.Equals(i) || IPAddress.IPv6Any.Equals(i)));
+            Hosts.Remove("example.com");
             Hosts.Remove(d);
             Assert.DoesNotContain(d, Hosts.Blocked());
         }
@@ -124,7 +133,7 @@ public class WindowsTests(ITestOutputHelper log)
         File.WriteAllBytes(fake, new byte[] { 0x4D, 0x5A });   // unsigned
         try
         {
-            using (var k = Registry.CurrentUser.OpenSubKey(run, true)!) k.SetValue("PGTest Updater", $"\"{fake}\" --silent");
+            using (var k = Registry.CurrentUser.CreateSubKey(run)) k.SetValue("PGTest Updater", $"\"{fake}\" --silent");
             var f = SpywareScan.Run();
             foreach (var x in f.Take(30)) log.WriteLine($"{x.Severity} {x.Kind} {x.Name}: {x.Detail}");
             var t = Assert.Single(f, x => x.Name == "PGTest Updater");
@@ -138,7 +147,7 @@ public class WindowsTests(ITestOutputHelper log)
         }
         finally
         {
-            using (var k = Registry.CurrentUser.OpenSubKey(run, true)!) k.DeleteValue("PGTest Updater", false);
+            using (var k = Registry.CurrentUser.CreateSubKey(run)) k.DeleteValue("PGTest Updater", false);
             File.Delete(fake);
         }
     }
