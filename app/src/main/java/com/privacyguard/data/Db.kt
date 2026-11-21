@@ -135,6 +135,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "privacy.db",
         }
 
     /** (ts, host) of one uid's DNS requests since `from`. */
+    /** Blocked requests since `from`, grouped: uid, reason, count. */
+    fun blockedSince(from: Long): List<Triple<Int, String?, Int>> =
+        readableDatabase.rawQuery("SELECT uid, why, COUNT(*) FROM conn WHERE blocked=1 AND ts>=? GROUP BY uid, why", arrayOf(from.toString())).use { c ->
+            List(c.count) { c.moveToNext(); Triple(c.getInt(0), if (c.isNull(1)) null else c.getString(1), c.getInt(2)) }
+        }
+
     fun connOf(uid: Int, from: Long): List<Pair<Long, String>> =
         readableDatabase.rawQuery("SELECT ts, host FROM conn WHERE uid=? AND ts>=?", arrayOf(uid.toString(), from.toString())).use { c ->
             List(c.count) { c.moveToNext(); c.getLong(0) to c.getString(1) }

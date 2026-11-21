@@ -12,10 +12,10 @@ Everything runs on the phone. No account, no cloud, no analytics. The only netwo
 
 | Tab | What it does |
 |---|---|
-| **Today** | Alerts (sensitive access in the background or with the screen off), data access followed by a tracker, trackers contacted today, daily and 7-day PDF reports, setup |
+| **Today** | Alerts (sensitive access in the background or with the screen off), data access followed by a tracker, requests blocked today, trackers contacted today, Wi-Fi check (open/WEP networks, DNS servers, Private DNS), daily and 7-day PDF reports, setup |
 | **Activity** | Every access by every app, grouped by category; DNS log of every server each app asked for, with tracker / block-list / keyword flags |
 | **Apps** | **Spyware check** (accessibility, notification access, device admin, keyboards, VPNs, overlays, hidden or sideloaded apps, user CA certificates), privacy score per app with a 30-day chart, changes after updates (new permissions or tracker SDKs), tracker SDKs inside each app (deep scan of the code), permission advisor, **Inspect an app** (manifest decoder, servers and keys written in the code, read-only code viewer), **Debloater** |
-| **Blocking** | Block lists (HaGeZi), firewall, internet only while on screen, blocked apps/domains, limited permissions |
+| **Blocking** | Block lists (HaGeZi), firewall, internet only while on screen, blocked apps/domains, limited permissions with temporary allow (15 min / 1 h) |
 
 Also: instant notification when the mic or camera turns on with the screen off, clipboard read alerts, a new-app alert with a tracker scan, an alert when an update adds permissions or trackers, a weekly privacy score, a home-screen widget, a Quick Settings tile for the VPN, and a PDF report every night at 23:50 in `Download/PrivacyGuard`.
 

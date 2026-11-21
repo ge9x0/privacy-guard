@@ -89,6 +89,10 @@ Allow unrestricted battery use for Privacy Guard (Settings → Apps → Privacy 
 
 **Trackers today.** Ad networks, data brokers and analytics companies contacted today, with the apps that contacted them. **Block** blocks that server for every app.
 
+**Blocked today.** How many requests the blocking stopped today, by reason (block list, tracker, your own rules) and the three apps with the most blocked requests.
+
+**Wi-Fi check.** The Wi-Fi you are on: its encryption, the DNS servers it hands out and whether Private DNS is on. An open network (no password) or WEP is shown in red, and you get a notification once per connection. A DNS server that is neither your router nor a known provider is marked; that is usually your internet provider and normal at home, but worth a look on a public network.
+
 **History.** Shows since when data is recorded and how much space it uses. **Clear history** deletes everything and starts from zero. Activity is kept 60 days and the DNS log 30 days.
 
 ---
@@ -142,6 +146,7 @@ All network blocking works through the local VPN (Setup, step 4).
 **Blocking.**
 - **Block third-party trackers**: e.g. the Facebook SDK inside another app is blocked, Instagram inside Instagram is not. System apps are never touched.
 - **Apps without internet**, **Blocked domains** and **Limited permissions** list everything you blocked, each with **Remove** or **Restore**.
+- **Temporary permission.** Next to each limited permission, **15 min** or **1 h** gives it back for that time; then it is limited again by itself (*Allowed until HH:mm* is shown, **Limit now** ends it early). Needs Wireless debugging or Shizuku, also when the time is up; if neither is connected then, it is limited again as soon as one is.
 
 ---
 
@@ -163,6 +168,8 @@ All network blocking works through the local VPN (Setup, step 4).
 | Find out if I have spyware | Apps → Spyware check |
 | Fix an app that broke after blocking | Activity → DNS log → All → search the app → **Allow** its blocked server |
 | Remove bloatware | Apps → Debloater (Wireless debugging connected) |
+| Let a blocked app use contacts just once | Blocking → Limited permissions → **15 min** |
+| Check if this Wi-Fi is safe | Today → Wi-Fi check |
 | Share a report | Today → **7-day PDF** |
 
 ---

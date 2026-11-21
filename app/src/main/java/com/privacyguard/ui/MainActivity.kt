@@ -238,7 +238,9 @@ private fun Home() {
                 })
             AlertsCard(d, onLimit = ::limit, onNet = ::blockNet)
             FlowsCard(d)
+            BlockedTodayCard(blockTick * 31 + System.identityHashCode(d), vpn)
             TrackersCard(d, blockTick, vpn, onHost = ::blockHost)
+            WifiCard(System.identityHashCode(d))
         }
 
         // ---------------- blocking
@@ -248,7 +250,14 @@ private fun Home() {
         FirewallCard(blockTick, busy == null, onChange = { blockTick++ },
             onSync = { work("Applying firewall") { com.privacyguard.block.Firewall.sync(ctx) ?: "Connect Wireless debugging or Shizuku first (Today → Setup, step 2)." } })
         BgBlockCard(blockTick, onChange = { blockTick++ })
-        BlockSection(vpn, blockTick, onChange = { blockTick++ }, onRestore = { key ->
+        BlockSection(vpn, blockTick, onChange = { blockTick++ }, onAllow = { key, min ->
+            work("Allowing") {
+                when (val r = Blocker.allowFor(ctx, key, min)) {
+                    is Blocker.Result.Manual -> { manual = key.substringBefore('|') to r; null }
+                    is Blocker.Result.Done -> { blockTick++; r.msg }
+                }
+            }
+        }, onRelimit = { work("Limiting") { Blocker.relimitDue(ctx, all = true); blockTick++; "Limited again." } }, onRestore = { key ->
             work("Restoring") {
                 when (val r = Blocker.restore(ctx, key)) {
                     is Blocker.Result.Manual -> { manual = key.substringBefore('|') to r; null }
@@ -586,12 +595,13 @@ private fun TrackersCard(d: DayReport, tick: Int, vpn: Boolean, onHost: (String)
 }
 
 @Composable
-private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestore: (String) -> Unit) {
+private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onAllow: (String, Int) -> Unit, onRelimit: () -> Unit, onRestore: (String) -> Unit) {
     val ctx = LocalContext.current
     val trackers = remember(tick) { Blocker.trackersOn(ctx) }
     val apps = remember(tick) { Blocker.apps(ctx).sorted() }
     val hosts = remember(tick) { Blocker.hosts(ctx).sorted() }
     val ops = remember(tick) { Blocker.limited(ctx) }
+    val temp = remember(tick) { Blocker.temporary(ctx) }
     val an = remember { com.privacyguard.core.AppNames(ctx) }
     SectionCard {
         Title("Blocking")
@@ -619,9 +629,18 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
         if (ops.isNotEmpty()) { HorizontalDivider(); Text("Limited permissions", fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
         for ((k, _) in ops) Row(verticalAlignment = Alignment.CenterVertically) {
             val (pkg, op) = k.split('|', limit = 2)
-            Text("${an.name(pkg)} · ${com.privacyguard.core.Ops.map[op]?.first ?: op}", fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("${an.name(pkg)} · ${com.privacyguard.core.Ops.map[op]?.first ?: op}", fontSize = 13.sp)
+                temp[k]?.let { (until, _) -> Text("Allowed until " + hhmm(until), fontSize = 12.sp, color = ORANGE) }
+            }
+            if (temp[k] != null) TextButton(onClick = onRelimit) { Text("Limit now", fontSize = 12.sp) }
+            else {
+                TextButton(onClick = { onAllow(k, 15) }) { Text("15 min", fontSize = 12.sp) }
+                TextButton(onClick = { onAllow(k, 60) }) { Text("1 h", fontSize = 12.sp) }
+            }
             TextButton(onClick = { onRestore(k) }) { Text("Restore", fontSize = 12.sp) }
         }
+        if (ops.isNotEmpty()) Hint("“15 min” and “1 h” give the permission back for a while; then it is limited again by itself.")
         Hint("Limiting permissions needs Wireless debugging or Shizuku; otherwise Settings opens. Microphone, camera and location can be set to " +
             "“only while in use”; contacts, call log, SMS and clipboard can only be blocked completely.")
     }

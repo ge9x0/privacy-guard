@@ -352,3 +352,62 @@ internal fun ShizukuOption(onWork: (String, suspend () -> String?) -> Unit) {
         }
     }
 }
+
+internal fun hhmm(ts: Long): String = java.time.Instant.ofEpochMilli(ts).atZone(java.time.ZoneId.systemDefault())
+    .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+
+/** Today: how many requests the blocking stopped, by reason and by app. */
+@Composable
+internal fun BlockedTodayCard(tick: Int, vpn: Boolean) {
+    val ctx = localContext()
+    val rows = cached("blocked", tick) {
+        val from = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        com.privacyguard.data.Db.get(ctx).blockedSince(from)
+    } ?: return
+    if (rows.isEmpty() && !vpn) return
+    val an = remember { com.privacyguard.core.AppNames(ctx) }
+    val total = rows.sumOf { it.third }
+    SectionCard {
+        Title("Blocked today")
+        if (total == 0) { Hint("Nothing blocked yet today. Turn on block lists or tracker blocking on the Blocking tab."); return@SectionCard }
+        Text("%,d ".format(total) + (if (total == 1) "request stopped" else "requests stopped"), fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GREEN)
+        val byWhy = rows.groupBy { com.privacyguard.block.Blocker.reasonLabel(it.second).ifEmpty { "other" } }
+            .mapValues { e -> e.value.sumOf { it.third } }.entries.sortedByDescending { it.value }
+        for ((why, n) in byWhy.take(5)) Row {
+            Text(why.replaceFirstChar { it.uppercase() }, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text("%,d".format(n), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+        val byApp = rows.groupBy { it.first }.mapValues { e -> e.value.sumOf { it.third } }.entries.sortedByDescending { it.value }.take(3)
+        if (byApp.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text("Most blocked", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            for ((uid, n) in byApp) Row {
+                Text(an.name(an.pkgForUid(uid)), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text("%,d".format(n), fontSize = 13.sp)
+            }
+        }
+    }
+}
+
+/** Today: the Wi-Fi the phone is on, its encryption and DNS servers. */
+@Composable
+internal fun WifiCard(tick: Int) {
+    val ctx = localContext()
+    val s = cached("wifi", tick) { com.privacyguard.monitor.WifiCheck.current(ctx) ?: com.privacyguard.monitor.WifiCheck.State(null, false, emptyList(), false).copy(security = "-") }
+        ?: return
+    if (s.security == "-") return
+    SectionCard {
+        Title("Wi-Fi check")
+        when {
+            s.weak -> Banner("${s.security}: anyone nearby can see traffic that is not encrypted, including the names of the sites your apps open. " +
+                "Avoid logging in to sites without https, or use a real VPN here.", RED)
+            s.security != null -> Text("Encryption: ${s.security}", fontSize = 13.sp, color = GREEN)
+            else -> Hint("Android does not report this network's encryption on this version.")
+        }
+        for ((ip, label) in s.dns) Text("DNS: $ip · $label", fontSize = 13.sp,
+            color = if (label == com.privacyguard.monitor.WifiCheck.UNKNOWN) ORANGE else Color.Unspecified)
+        if (s.unknownDns.isNotEmpty()) Hint("This network sends your DNS questions to a server that is neither your router nor a known provider. " +
+            "It is often your internet provider, which is normal; on a public network it can be used to see or change which sites you open.")
+        Text(if (s.privateDns) "Private DNS: on (encrypted)" else "Private DNS: off", fontSize = 13.sp)
+    }
+}

@@ -44,10 +44,12 @@ object ShizukuShell {
     fun exec(cmd: String, timeoutSec: Long = 120): String {
         val p = newProcess.invoke(null, arrayOf("sh", "-c", "$cmd 2>&1"), null, null) as Process
         val out = StringBuilder()
-        val reader = Thread { p.inputStream.bufferedReader().use { out.append(it.readText()) } }
+        // Shizuku's remote process has no waitFor(timeout); the output closes when the command ends
+        val reader = Thread { runCatching { p.inputStream.bufferedReader().use { out.append(it.readText()) } } }
         reader.start()
-        if (!p.waitFor(timeoutSec, TimeUnit.SECONDS)) p.destroy()
-        reader.join(5000)
+        reader.join(TimeUnit.SECONDS.toMillis(timeoutSec))
+        if (reader.isAlive) { runCatching { p.destroy() }; reader.join(2000) }
+        else runCatching { p.waitFor() }
         return out.toString()
     }
 }

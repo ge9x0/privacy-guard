@@ -179,6 +179,49 @@ object Blocker {
             else "Blocked: the app now gets an empty list. \"Restore\" under Blocking undoes it.")
     }
 
+    /** pkg|OP -> "until|mode": a limited permission allowed for a while; limited again at `until`. */
+    fun temporary(ctx: Context): Map<String, Pair<Long, String>> =
+        p(ctx).all.filterKeys { it.startsWith("tmp:") }.mapNotNull { (k, v) ->
+            val (u, m) = v.toString().split('|', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
+            k.removePrefix("tmp:") to ((u.toLongOrNull() ?: 0L) to m)
+        }.toMap()
+
+    /** Gives a limited permission back for `minutes`, then [relimitDue] limits it again. */
+    fun allowFor(ctx: Context, key: String, minutes: Int): Result {
+        val prev = p(ctx).getString("op:$key", null) ?: return Result.Done("This permission is not limited.")
+        val (pkg, op) = key.split('|', limit = 2)
+        if (!Shell.privileged(ctx, true)) return Result.Manual("This needs Wireless debugging or Shizuku (Today → Setup, step 2).", emptyList())
+        val mode = temporary(ctx)[key]?.second ?: uidMode(ctx, pkg, op) ?: limitMode(op)
+        val r = runCatching { Shell.exec(ctx, cmdSet(pkg, op, prev)) }.getOrElse { "error: ${it.message}" }
+        if (r.isNotBlank()) return Result.Done("Failed: ${r.trim()}")
+        val now = uidMode(ctx, pkg, op) ?: "allow"
+        if (now != prev) {
+            Log.w(TAG, "allowFor $key: Android left it at '$now'")
+            return Result.Manual("Android did not allow this change (it stayed \"$now\"). Allow it yourself in Settings → Permissions.", emptyList())
+        }
+        val until = System.currentTimeMillis() + minutes * 60_000L
+        p(ctx).edit().putString("tmp:$key", "$until|$mode").apply()
+        com.privacyguard.work.TempPermWorker.schedule(ctx)
+        val at = java.time.Instant.ofEpochMilli(until).atZone(java.time.ZoneId.systemDefault()).toLocalTime().withNano(0).withSecond(0)
+        return Result.Done("Allowed until $at, then limited again.")
+    }
+
+    /** Limits again every temporary permission whose time is up (or all of them with `all`). Returns how many are still waiting. */
+    fun relimitDue(ctx: Context, all: Boolean = false): Int {
+        val now = System.currentTimeMillis()
+        val tmp = temporary(ctx)
+        if (tmp.isEmpty()) return 0
+        val due = tmp.filter { all || it.value.first <= now }
+        if (due.isNotEmpty() && !Shell.privileged(ctx, true)) return tmp.size
+        for ((key, v) in due) {
+            val (pkg, op) = key.split('|', limit = 2)
+            val r = runCatching { Shell.exec(ctx, cmdSet(pkg, op, v.second)) }.getOrElse { "error: ${it.message}" }
+            Log.i(TAG, "relimit $key -> ${v.second}: ${r.trim()}")
+            if (r.isBlank()) p(ctx).edit().remove("tmp:$key").apply()
+        }
+        return temporary(ctx).size
+    }
+
     fun restore(ctx: Context, key: String): Result {
         val prev = p(ctx).getString("op:$key", null) ?: return Result.Done("Nothing to restore.")
         val (pkg, op) = key.split('|', limit = 2)
@@ -186,7 +229,7 @@ object Blocker {
         if (!Shell.privileged(ctx, true)) return Result.Manual("Restoring needs Wireless debugging or Shizuku, or run from a computer:", listOf("adb shell $cmd"))
         val r = runCatching { Shell.exec(ctx, cmd) }.getOrElse { "error: ${it.message}" }
         if (r.isNotBlank()) return Result.Done("Failed: ${r.trim()}")
-        p(ctx).edit().remove("op:$key").apply()
+        p(ctx).edit().remove("op:$key").remove("tmp:$key").apply()
         return Result.Done("Restored ($prev).")
     }
 

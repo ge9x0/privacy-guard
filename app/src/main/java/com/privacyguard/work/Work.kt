@@ -64,6 +64,24 @@ object Reports {
     }
 }
 
+/** Limits temporary permissions again when their time is up. */
+class TempPermWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
+    override suspend fun doWork(): Result = runCatching {
+        if (com.privacyguard.block.Blocker.relimitDue(applicationContext) > 0) schedule(applicationContext)
+        Result.success()
+    }.getOrElse { Log.w("PG.Work", "relimit", it); Result.retry() }
+
+    companion object {
+        /** Runs at the next expiry (WorkManager may run it a little later when the phone is idle). */
+        fun schedule(ctx: Context) {
+            val next = com.privacyguard.block.Blocker.temporary(ctx).values.minOfOrNull { it.first } ?: return
+            val delay = (next - System.currentTimeMillis()).coerceAtLeast(0)
+            WorkManager.getInstance(ctx).enqueueUniqueWork("relimit", androidx.work.ExistingWorkPolicy.REPLACE,
+                androidx.work.OneTimeWorkRequestBuilder<TempPermWorker>().setInitialDelay(delay, TimeUnit.MILLISECONDS).build())
+        }
+    }
+}
+
 /** Every 3 hours: collect the history (so nothing is lost before Android deletes it). */
 class CollectWorker(ctx: Context, p: WorkerParameters) : CoroutineWorker(ctx, p) {
     override suspend fun doWork(): Result = runCatching {

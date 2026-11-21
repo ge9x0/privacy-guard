@@ -152,7 +152,9 @@ class MonitorService : Service() {
         getSystemService(CameraManager::class.java).registerAvailabilityCallback(camCb, worker)
         // Baseline for the update alert (only apps without one; uses the saved scans)
         worker.postDelayed({ runCatching { com.privacyguard.apps.AppChanges.baseline(this) } }, 60_000)
+        runCatching { com.privacyguard.monitor.WifiCheck.watch(this) }
         worker.post {
+            runCatching { com.privacyguard.block.Blocker.relimitDue(this) }
             mode = Shell.mode(this, tryConnect = true)
             updateOngoing()
             heartbeat.run()
@@ -165,6 +167,8 @@ class MonitorService : Service() {
                 updateOngoing()
                 // after a restart the kernel firewall is empty: re-apply as soon as there is an ADB connection
                 if (com.privacyguard.block.Firewall.pending(this@MonitorService)) runCatching { com.privacyguard.block.Firewall.sync(this@MonitorService) }
+                // backup for the relimit worker (it can be late in Doze)
+                runCatching { com.privacyguard.block.Blocker.relimitDue(this@MonitorService) }
                 runCatching { com.privacyguard.widget.PrivacyWidget.update(this@MonitorService) }
                 worker.postDelayed(this, 15 * 60_000L)
             }
@@ -174,6 +178,7 @@ class MonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
     override fun onDestroy() {
+        com.privacyguard.monitor.WifiCheck.stop(this)
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(installReceiver) }
         getSystemService(AudioManager::class.java).unregisterAudioRecordingCallback(recCb)
