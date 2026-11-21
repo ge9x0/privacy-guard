@@ -1,0 +1,43 @@
+name: Windows
+
+on:
+  push:
+    paths: ["windows/**", ".github/workflows/windows.yml"]
+  pull_request:
+    paths: ["windows/**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Core tests
+        run: dotnet test PrivacyGuard.Core.Tests -c Release
+      - name: Windows tests (administrator, real registry, firewall, hosts, DNS log)
+        run: dotnet test PrivacyGuard.Platform.Tests -c Release --logger "console;verbosity=normal"
+      - name: Publish single exe
+        run: dotnet publish PrivacyGuard -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o out
+      - name: Self-test (opens every tab, presses every button, saves screenshots)
+        shell: pwsh
+        run: |
+          $p = Start-Process out\PrivacyGuard.exe -ArgumentList '--selftest', "$pwd\shots" -PassThru -Wait
+          Get-Content shots\selftest.log
+          if (Test-Path shots\errors.log) { Get-Content shots\errors.log }
+          if ($p.ExitCode -ne 0) { throw "self-test failed ($($p.ExitCode))" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PrivacyGuard-windows
+          path: windows/out/PrivacyGuard.exe
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: windows/shots/

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PrivacyGuard.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Same list as the Android app (app/src/main/java/com/privacyguard/core/Trackers.kt); regenerate with tools/gen-trackers.py -->
+    <EmbeddedResource Include="trackers.json" LogicalName="trackers.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+  </ItemGroup>
+</Project>

@@ -13,3 +13,6 @@ keystore.properties
 *.jks
 *.keystore
 dist/
+windows/**/bin/
+windows/**/obj/
+windows/**/TestResults/

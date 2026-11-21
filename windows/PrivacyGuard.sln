@@ -1,0 +1,46 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivacyGuard.Core", "PrivacyGuard.Core\PrivacyGuard.Core.csproj", "{A3C18326-CBBE-401D-A988-02639D30A6A7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivacyGuard.Core.Tests", "PrivacyGuard.Core.Tests\PrivacyGuard.Core.Tests.csproj", "{9AB5A816-2F23-4892-84A8-DE5899D4E22E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivacyGuard.Platform", "PrivacyGuard.Platform\PrivacyGuard.Platform.csproj", "{83BE5886-2048-4AA7-982F-44640E6F2A75}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivacyGuard.Platform.Tests", "PrivacyGuard.Platform.Tests\PrivacyGuard.Platform.Tests.csproj", "{C7454371-2079-404C-9D1E-535D225F3CB9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PrivacyGuard", "PrivacyGuard\PrivacyGuard.csproj", "{D1F1E663-7FAB-4375-8959-B54590C33E88}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A3C18326-CBBE-401D-A988-02639D30A6A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A3C18326-CBBE-401D-A988-02639D30A6A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A3C18326-CBBE-401D-A988-02639D30A6A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A3C18326-CBBE-401D-A988-02639D30A6A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9AB5A816-2F23-4892-84A8-DE5899D4E22E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9AB5A816-2F23-4892-84A8-DE5899D4E22E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9AB5A816-2F23-4892-84A8-DE5899D4E22E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9AB5A816-2F23-4892-84A8-DE5899D4E22E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{83BE5886-2048-4AA7-982F-44640E6F2A75}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{83BE5886-2048-4AA7-982F-44640E6F2A75}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{83BE5886-2048-4AA7-982F-44640E6F2A75}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{83BE5886-2048-4AA7-982F-44640E6F2A75}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C7454371-2079-404C-9D1E-535D225F3CB9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7454371-2079-404C-9D1E-535D225F3CB9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7454371-2079-404C-9D1E-535D225F3CB9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7454371-2079-404C-9D1E-535D225F3CB9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D1F1E663-7FAB-4375-8959-B54590C33E88}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1F1E663-7FAB-4375-8959-B54590C33E88}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1F1E663-7FAB-4375-8959-B54590C33E88}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1F1E663-7FAB-4375-8959-B54590C33E88}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
