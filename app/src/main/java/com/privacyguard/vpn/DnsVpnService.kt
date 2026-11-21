@@ -32,11 +32,19 @@ import kotlin.concurrent.thread
 class DnsVpnService : VpnService() {
     private var iface: ParcelFileDescriptor? = null
     @Volatile private var running = false
-    // 16, not 4: a request without an answer holds its thread for 5 s; with 4 the queue filled up and
-    // apps gave up before their turn came.
+    // 16 threads; a request holds one for at most DEADLINE_MS, and requests older than STALE_MS are skipped.
     private val pool = Executors.newFixedThreadPool(16)
-    @Volatile private var up: InetAddress = InetAddress.getByName("1.1.1.1")
+    /** The real network's DNS servers (IPv4 and IPv6) and that network; followed on every change. */
+    @Volatile private var ups: List<InetAddress> = emptyList()
+    @Volatile private var upNet: Network? = null
+    /** The server that answered last: tried first next time. */
+    @Volatile private var good: InetAddress? = null
+    /** Since when a fallback answers instead of the network's own server; the own one is tried again every minute. */
+    @Volatile private var fallbackSince = 0L
+    /** Requests in a row the network's own servers did not answer; one slow answer is not a dead server. */
+    @Volatile private var ownFails = 0
     private var netCb: ConnectivityManager.NetworkCallback? = null
+    private val health = DnsHealth()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -46,23 +54,31 @@ class DnsVpnService : VpnService() {
         return START_STICKY
     }
 
-    private fun upstream(lp: LinkProperties? = null): InetAddress {
-        val cm = getSystemService(ConnectivityManager::class.java)
-        val l = lp ?: cm.activeNetwork?.let { cm.getLinkProperties(it) }
-        return l?.dnsServers
-            ?.firstOrNull { it is Inet4Address && it.hostAddress != FAKE_DNS }
-            ?: InetAddress.getByName("1.1.1.1")
+    private fun dnsOf(lp: LinkProperties?): List<InetAddress> =
+        lp?.dnsServers.orEmpty().filter { it.hostAddress?.substringBefore('%') != FAKE_DNS }
+
+    private fun setUpstream(net: Network?, lp: LinkProperties?) {
+        val l = dnsOf(lp)
+        if (l.isEmpty()) return
+        if (l != ups) Log.i(TAG, "upstream ${ups.map { it.hostAddress }} -> ${l.map { it.hostAddress }}")
+        ups = l; upNet = net
+        if (good != null && good !in l && good !in FALLBACK) good = null
     }
 
-    /** The DNS server follows network changes (Wi-Fi <-> mobile); before, it stayed on the initial one. */
+    /**
+     * The DNS servers follow network changes (Wi-Fi <-> mobile). IPv6 servers count too: on IPv6-only
+     * mobile networks the old IPv4 router address stayed in use and nothing resolved.
+     */
     private fun watchUpstream(cm: ConnectivityManager) {
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
-                // only real networks (not our VPN) and only if they have IPv4 DNS; otherwise
-                // keep the current server instead of falling back to 1.1.1.1
+                // only real networks (not our VPN)
                 if (cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != false) return
-                val n = lp.dnsServers.firstOrNull { it is Inet4Address && it.hostAddress != FAKE_DNS } ?: return
-                if (n != up) { Log.i(TAG, "upstream ${up.hostAddress} -> ${n.hostAddress}"); up = n }
+                setUpstream(network, lp)
+            }
+            override fun onLost(network: Network) {
+                // until the next network reports its servers, use the default route and the fallbacks
+                if (network == upNet) { upNet = null; good = null }
             }
         }
         // our app is outside the VPN, so the "default" network is the real one
@@ -73,7 +89,11 @@ class DnsVpnService : VpnService() {
     @Volatile private var bypassIps: Set<String> = emptySet()
 
     private fun startVpn() {
-        up = upstream()
+        run {
+            val cm0 = getSystemService(ConnectivityManager::class.java)
+            val n = cm0.activeNetwork
+            setUpstream(n, n?.let { cm0.getLinkProperties(it) })
+        }
         val b = Builder()
             .setSession("Privacy Guard DNS")
             .addAddress("10.111.222.2", 32)
@@ -108,7 +128,14 @@ class DnsVpnService : VpnService() {
                 val n = try { input.read(buf) } catch (e: Exception) { if (running) Log.w(TAG, "read", e); break }
                 if (n <= 0) continue
                 val q = Packets.parseDnsQuery(buf, n)
-                if (q == null) { if (bypassIps.isNotEmpty()) refuseBypass(buf, n, cm, db, output); continue }
+                if (q == null) {
+                    // DNS over TCP to us (after a truncated answer): refuse at once so the resolver
+                    // uses the UDP answer instead of waiting for a timeout
+                    if (Packets.proto(buf) == 6 && Packets.ipv4Dst(buf, n) == FAKE_DNS) {
+                        Packets.tcpReset(buf, n)?.let { r -> runCatching { synchronized(output) { output.write(r) } } }
+                    } else if (bypassIps.isNotEmpty()) refuseBypass(buf, n, cm, db, output)
+                    continue
+                }
                 val pkt = buf.copyOf(n)
                 // the uid is looked up IMMEDIATELY, while the app's socket is still open; before, it was looked up
                 // inside the queue and, when the queue was slow, Android returned -1 (unknown app).
@@ -121,13 +148,17 @@ class DnsVpnService : VpnService() {
                 }.getOrDefault(-1)
                 val ts = System.currentTimeMillis()
                 pool.execute {
+                    // The app repeats a request after about 1-5 s. A request that waited longer in the
+                    // queue is useless: answering it only delays the newer ones (this made the internet
+                    // look dead for minutes after a short DNS hiccup).
+                    if (System.currentTimeMillis() - ts > STALE_MS) { health.stale(); return@execute }
                     val why = runCatching { Blocker.dnsVerdict(this, uid, q.name) }.getOrNull()
                     val nx = if (why != null) Packets.nxdomain(pkt, q) else null
                     runCatching { db.addConn(ConnRow(ts, uid, q.name, q.payloadLen.toLong(), blocked = nx != null, why = why)) }
                     if (nx != null) {
                         Log.d(TAG, "blocked ($why) uid=$uid ${q.name}")
                         runCatching { synchronized(output) { output.write(Packets.buildUdpReply(q, nx, nx.size)) } }
-                    } else forward(pkt, q, up, output)
+                    } else forward(pkt, q, ts, output)
                 }
             }
         }
@@ -161,20 +192,79 @@ class DnsVpnService : VpnService() {
         runCatching { db.addConn(ConnRow(now, uid, "$what.$dst", 0, blocked = true, why = "bypass")) }
     }
 
-    private fun forward(pkt: ByteArray, q: Packets.DnsQuery, up: InetAddress, out: FileOutputStream) {
-        try {
-            DatagramSocket().use { s ->
-                protect(s)
-                s.soTimeout = 5000
-                s.send(DatagramPacket(pkt, q.payloadOffset, q.payloadLen, up, 53))
-                val resp = ByteArray(4096)
-                val dp = DatagramPacket(resp, resp.size)
-                s.receive(dp)
-                val reply = Packets.buildUdpReply(q, resp, dp.length)
-                synchronized(out) { out.write(reply) }
+    /**
+     * Sends the request to the last server that answered, then the network's other servers, then public
+     * fallbacks, about 1.5 s each, within the time the app still waits. Before, one server and 5 s:
+     * one lost packet or a router hiccup meant no answer at all.
+     */
+    private fun forward(pkt: ByteArray, q: Packets.DnsQuery, queued: Long, out: FileOutputStream) {
+        val net = upNet
+        val g = good
+        val retryOwn = g != null && g in FALLBACK && System.currentTimeMillis() - fallbackSince > RETRY_OWN_MS
+        // when retrying the network's own server, give it less time so a still-dead server costs little
+        val order = (if (retryOwn) ups + FALLBACK else listOfNotNull(g) + ups + FALLBACK).distinct()
+        val id0 = pkt[q.payloadOffset]; val id1 = pkt[q.payloadOffset + 1]
+        for (server in order) {
+            val left = queued + DEADLINE_MS - System.currentTimeMillis()
+            if (left < 300) break
+            try {
+                DatagramSocket().use { s ->
+                    protect(s)
+                    // the network the server belongs to; with the default route a router address
+                    // of the old Wi-Fi was sent over mobile data
+                    if (net != null && server !in FALLBACK) runCatching { net.bindSocket(s) }
+                    s.soTimeout = minOf(if (retryOwn && server !in FALLBACK) 700L else TRY_MS, left).toInt()
+                    s.send(DatagramPacket(pkt, q.payloadOffset, q.payloadLen, server, 53))
+                    val resp = ByteArray(8192)
+                    while (true) {
+                        val dp = DatagramPacket(resp, resp.size)
+                        s.receive(dp)
+                        // ignore a late answer to an older request
+                        if (dp.length >= 2 && resp[0] == id0 && resp[1] == id1) {
+                            synchronized(out) { out.write(Packets.buildUdpReply(q, resp, dp.length)) }
+                            break
+                        }
+                    }
+                }
+                val viaFallback = server in FALLBACK
+                if (!viaFallback) ownFails = 0
+                // stay with the network's server after a single miss; switch only when it misses twice in a row
+                if (good != server && (!viaFallback || ownFails >= 2 || ups.isEmpty())) {
+                    Log.i(TAG, "dns answered by ${server.hostAddress}"); good = server
+                }
+                if (viaFallback) { if (retryOwn || fallbackSince == 0L) fallbackSince = System.currentTimeMillis() } else fallbackSince = 0L
+                health.ok(viaFallback && ups.isNotEmpty(), ups.firstOrNull())
+                return
+            } catch (e: Exception) {
+                Log.d(TAG, "dns ${q.name} via ${server.hostAddress}: ${e.message}")
+                if (server !in FALLBACK) ownFails++
+                if (good == server && (server in FALLBACK || ownFails >= 2)) good = null
             }
-        } catch (e: Exception) {
-            Log.d(TAG, "dns ${q.name}: ${e.message}")
+        }
+        health.failed()
+    }
+
+    /** Counts answers and failures; tells the user once when the network's own DNS stops answering. */
+    private inner class DnsHealth {
+        private var fails = 0
+        private var stale = 0
+        private var lastNote = 0L
+        private var viaFallbackRun = 0
+        @Synchronized fun failed() { fails++; if (fails % 20 == 0) Log.w(TAG, "dns: $fails requests without an answer, $stale stale") }
+        @Synchronized fun stale() { stale++ }
+        @Synchronized fun ok(viaFallback: Boolean, own: InetAddress?) {
+            fails = 0
+            viaFallbackRun = if (viaFallback) viaFallbackRun + 1 else 0
+            val now = System.currentTimeMillis()
+            // tell the user only when the network's DNS is really down (5 answers in a row came from the fallback)
+            if (viaFallbackRun < 5 || now - lastNote < 6 * 3600_000L) return
+            lastNote = now
+            Log.w(TAG, "network DNS ${own?.hostAddress} not answering; using fallback")
+            runCatching {
+                com.privacyguard.apps.Insights.post(this@DnsVpnService, 7301, "This network's DNS is not answering",
+                    "Its DNS server (${own?.hostAddress}) stopped answering, so Privacy Guard is using Cloudflare / Google DNS for now. " +
+                        "The internet keeps working; it switches back when the network's server answers again.")
+            }
         }
     }
 
@@ -195,6 +285,12 @@ class DnsVpnService : VpnService() {
     companion object {
         private const val TAG = "PG.Dns"
         const val FAKE_DNS = "10.111.222.1"
+        private const val STALE_MS = 3_000L
+        private const val DEADLINE_MS = 4_500L
+        private const val TRY_MS = 2_000L
+        private const val RETRY_OWN_MS = 60_000L
+        /** Used only when the network's own DNS servers do not answer. */
+        private val FALLBACK: List<InetAddress> = listOf("1.1.1.1", "8.8.8.8").map { InetAddress.getByName(it) }
         const val ACTION_STOP = "com.privacyguard.STOP_VPN"
         @Volatile var isRunning = false
 

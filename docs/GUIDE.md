@@ -182,6 +182,8 @@ All network blocking works through the local VPN (Setup, step 4).
 
 **No servers in the DNS log.** The local VPN is off (step 4), another VPN replaced it, or Private DNS is set to a hostname.
 
+**"This network's DNS is not answering".** The Wi-Fi or mobile network's DNS server stopped answering, so the local VPN uses Cloudflare / Google DNS for now and the internet keeps working. Every minute it tries the network's server again and switches back by itself.
+
 **An app or website stopped working.** See *Fix an app that broke* above. You can also turn off a list in Blocking → Block lists.
 
 **No alerts at night although something happened.** Allow unrestricted battery use and autostart (section 2, *Battery*).
