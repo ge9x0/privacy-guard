@@ -78,7 +78,7 @@ object Debloat {
     fun restoreCmd(pkg: String) = "cmd package install-existing --user 0 $pkg"
 
     fun remove(ctx: Context, pkg: String) = exec(ctx, removeCmd(pkg), "Removed for your user. The app's files stay on the phone; tap Restore any time.",
-        "Removing a system app needs Wireless debugging connected (Shell access). Or run from a computer:") { it.contains("Success") }
+        "Removing a system app needs Wireless debugging or Shizuku (Setup, step 2). Or run from a computer:") { it.contains("Success") }
 
     fun restore(ctx: Context, pkg: String): Blocker.Result {
         val ai = runCatching { ctx.packageManager.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.getOrNull()
@@ -92,12 +92,12 @@ object Debloat {
     }
 
     private fun restoreSystem(ctx: Context, pkg: String) = exec(ctx, restoreCmd(pkg), "Restored.",
-        "Restoring needs Wireless debugging connected. Or run from a computer:") { it.contains("installed for user", true) }
+        "Restoring needs Wireless debugging or Shizuku. Or run from a computer:") { it.contains("installed for user", true) }
 
     private fun exec(ctx: Context, cmd: String, ok: String, manual: String, success: (String) -> Boolean): Blocker.Result {
         require(cmd.substringAfterLast(' ') !in never)
-        if (!Shell.adbConnected(ctx, true)) return Blocker.Result.Manual(manual, listOf("adb shell $cmd"))
-        val r = runCatching { Shell.adb(ctx, cmd) }.getOrElse { "error: ${it.message}" }.trim()
+        if (!Shell.privileged(ctx, true)) return Blocker.Result.Manual(manual, listOf("adb shell $cmd"))
+        val r = runCatching { Shell.exec(ctx, cmd) }.getOrElse { "error: ${it.message}" }.trim()
         return Blocker.Result.Done(if (success(r)) ok else "Failed: $r")
     }
 }

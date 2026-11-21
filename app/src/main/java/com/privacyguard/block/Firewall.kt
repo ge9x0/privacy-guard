@@ -32,10 +32,10 @@ object Firewall {
 
     /** Makes the firewall match the "Apps without internet" list. null if there is no ADB connection. */
     fun sync(ctx: Context): String? {
-        if (!Shell.adbConnected(ctx, true)) return null
+        if (!Shell.privileged(ctx, true)) return null
         val want = Blocker.apps(ctx).filter { eligible(ctx, it) }.toSet()
         val have = applied(ctx)
-        fun run(c: String) = runCatching { Shell.adb(ctx, c) }.getOrElse { "error: ${it.message}" }.trim()
+        fun run(c: String) = runCatching { Shell.exec(ctx, c) }.getOrElse { "error: ${it.message}" }.trim()
         val now = HashSet<String>()
         if (want.isNotEmpty()) run("cmd connectivity set-chain3-enabled true")
         for (pkg in want) {

@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
  */
 enum class Mode(val label: String, val desc: String) {
     DIRECT("Full access (permanent)", "Full history is read directly, also after a restart."),
+    SHIZUKU("Full access (Shizuku)", "Full history and actions through Shizuku. With root it starts by itself after a restart."),
     ADB("Full access (Wireless debugging)", "Full history is read through a local debug connection. Must be reconnected after a restart."),
     LIMITED("Limited", "Shows when the microphone/camera was used, but not always by which app."),
 }
@@ -31,6 +32,7 @@ object Shell {
     /** The level that works right now (also tries the ADB connection). */
     fun mode(ctx: Context, tryConnect: Boolean = true): Mode = when {
         hasDump(ctx) && directWorks() -> Mode.DIRECT
+        ShizukuShell.ready() -> Mode.SHIZUKU
         adbConnected(ctx, tryConnect) -> Mode.ADB
         else -> Mode.LIMITED
     }
@@ -79,10 +81,17 @@ object Shell {
         return out.toString(Charsets.UTF_8.name())
     }
 
+    /** A shell for actions (pm, appops, cmd connectivity): Shizuku if it is ready, otherwise Wireless debugging. */
+    fun privileged(ctx: Context, tryConnect: Boolean): Boolean = ShizukuShell.ready() || adbConnected(ctx, tryConnect)
+
+    /** Runs an action command through Shizuku or Wireless debugging (call [privileged] first). */
+    fun exec(ctx: Context, cmd: String): String = if (ShizukuShell.ready()) ShizukuShell.exec(cmd) else adb(ctx, cmd)
+
     /** Runs a command with the best level we have; null if we have none. */
     fun run(ctx: Context, cmd: String, mode: Mode = mode(ctx)): String? = runCatching {
         when (mode) {
             Mode.DIRECT -> direct(cmd.split(' ').filter { it.isNotBlank() })
+            Mode.SHIZUKU -> ShizukuShell.exec(cmd)
             Mode.ADB -> adb(ctx, cmd)
             Mode.LIMITED -> null
         }
@@ -105,7 +114,7 @@ object Shell {
         )
         val log = StringBuilder()
         for (c in cmds) {
-            val r = runCatching { adb(ctx, c) }.getOrElse { "error: ${it.message}" }
+            val r = runCatching { exec(ctx, c) }.getOrElse { "error: ${it.message}" }
             log.append("$ ").append(c).append('\n').append(r.trim()).append('\n')
         }
         directOk = null

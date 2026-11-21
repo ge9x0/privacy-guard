@@ -50,9 +50,16 @@ This stays after restarts.
 
 After pairing the app tries to give itself permanent access, like option A. If your phone refuses, Option B still works, but after every restart you tap **Reconnect** (Wireless debugging must be on).
 
-Option B is also what enables the actions that need a shell: removing permissions, the firewall and the debloater.
+**Option C – Shizuku (rooted phones, or no computer).** [Shizuku](https://shizuku.rikka.app) is a free app that gives other apps shell access.
+1. Install Shizuku (the app's **Get Shizuku** button opens the store).
+2. Open Shizuku and start it: **Start (for rooted devices)** on a rooted phone, or via Wireless debugging as Shizuku explains.
+3. Back in Privacy Guard tap **Allow Privacy Guard in Shizuku**, accept, then **Set up full access**.
 
-The chip at the top of Today shows the level: **Full access (permanent)**, **Full access (Wireless debugging)** or **Limited**.
+On a rooted phone Shizuku starts by itself after every restart, so the firewall and all actions keep working without **Reconnect**. Without root, Shizuku has to be started again after a restart (from its app).
+
+Option B or C is what enables the actions that need a shell: removing permissions, the firewall and the debloater. When both are available, Shizuku is used.
+
+The chip at the top of Today shows the level: **Full access (permanent)**, **Full access (Shizuku)**, **Full access (Wireless debugging)** or **Limited**.
 
 ### Step 3. Continuous monitoring
 Turn it on. A small permanent notification appears; it watches the microphone, camera and screen and alerts you immediately when something happens with the screen off. Here you also find **Clipboard alerts**: a notification when an app reads what you copied while it is not on screen.
@@ -162,7 +169,7 @@ All network blocking works through the local VPN (Setup, step 4).
 
 ## 9. Troubleshooting
 
-**The chip says "Limited".** Do Setup step 2. With option B, Wireless debugging must be on; tap **Reconnect** after a restart.
+**The chip says "Limited".** Do Setup step 2. With option B, Wireless debugging must be on; tap **Reconnect** after a restart. With option C, Shizuku must be running (open Shizuku and check it says it is running).
 
 **"Setup incomplete".** Tap **Open setup**; the missing steps are marked.
 
@@ -172,9 +179,9 @@ All network blocking works through the local VPN (Setup, step 4).
 
 **No alerts at night although something happened.** Allow unrestricted battery use and autostart (section 2, *Battery*).
 
-**Removing a permission or a system app fails.** These need Wireless debugging connected (the chip says *Full access (Wireless debugging)*). Without it the app shows the command to run from a computer.
+**Removing a permission or a system app fails.** These need Wireless debugging connected or Shizuku running (the chip says *Full access (Wireless debugging)* or *Full access (Shizuku)*). Without it the app shows the command to run from a computer.
 
-**After a restart the firewall is off.** Android clears it at every restart. Turn on Wireless debugging and tap **Reconnect**; the monitor also re-applies it within 15 minutes once connected.
+**After a restart the firewall is off.** Android clears it at every restart. Turn on Wireless debugging and tap **Reconnect** (or start Shizuku); the monitor also re-applies it within 15 minutes once connected. On a rooted phone with Shizuku this happens by itself.
 
 ---
 
@@ -186,7 +193,9 @@ All network blocking works through the local VPN (Setup, step 4).
 
 **Is a red alert proof of spying?** No. It means "worth a look". Many apps have good reasons; the alert tells you the facts so you can decide.
 
-**Why is Wireless debugging needed?** Android lets only the shell remove permissions, switch off an app's network or remove system apps. Wireless debugging gives Privacy Guard that shell on the phone itself, without a computer.
+**Why is Wireless debugging or Shizuku needed?** Android lets only the shell remove permissions, switch off an app's network or remove system apps. Wireless debugging or Shizuku gives Privacy Guard that shell on the phone itself, without a computer.
+
+**Does it work with root?** Yes, through Shizuku started as root (Setup, step 2, option C).
 
 **Where is my data?** Only on the phone, in the app's private storage. Uninstalling the app deletes it.
 

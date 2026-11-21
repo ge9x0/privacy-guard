@@ -61,6 +61,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
+    // Shizuku (Apache-2.0): shell or root commands without Wireless debugging
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     // ADB inside the app (Wireless debugging to itself), like LADB/Shizuku
     implementation("com.github.MuntashirAkon:libadb-android:3.1.1")
     implementation("org.conscrypt:conscrypt-android:2.5.3")

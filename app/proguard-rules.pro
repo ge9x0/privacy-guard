@@ -8,3 +8,5 @@
 -dontwarn javax.naming.**
 # Readable stack traces in crash reports
 -keepattributes SourceFile,LineNumberTable
+# Shizuku.newProcess is called by reflection (collect/ShizukuShell.kt)
+-keep class rikka.shizuku.Shizuku { *; }

@@ -62,6 +62,10 @@
             android:name=".adb.PairingReceiver"
             android:exported="false" />
 
+        <!-- Shizuku hands its binder to the app through this provider -->
+        <provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false" android:enabled="true" android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
         <receiver android:name=".widget.PrivacyWidget" android:exported="false" android:label="Privacy Guard">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />

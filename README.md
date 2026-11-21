@@ -29,6 +29,7 @@ Android only lets ordinary apps see a little. Privacy Guard picks the best level
 |---|---|---|
 | **Full access (permanent)** | Once, from a computer: the commands under *Today → Setup → step 2, option A*. Or option B below; the app then tries to grant itself permanent access. | Full history: who, when, for how long, on screen or not. Survives restarts. |
 | **Full access (Wireless debugging)** | *Today → Setup → step 2 → Start*, then pair with the code from *Developer options → Wireless debugging*. No computer needed. | The same, plus actions that need a shell: removing permissions, debloating, the firewall. Tap *Reconnect* after a restart. |
+| **Full access (Shizuku)** | *Today → Setup → step 2 → option C*: install [Shizuku](https://shizuku.rikka.app), start it (as root on a rooted phone), allow Privacy Guard. | The same as Wireless debugging. On a rooted phone it starts by itself after a restart, so nothing needs reconnecting. |
 | **Limited** | Nothing | When the mic/camera turned on and whether the screen was off, but not always which app. |
 
 Some manufacturers block permanent access; Wireless debugging then works instead.
@@ -95,6 +96,7 @@ Privacy Guard is free software under **GPL-3.0-or-later** (see `LICENSE`).
 
 - **Tracker signatures** (`app/src/main/res/values/am_trackers.xml`) are copied unchanged from [App Manager](https://github.com/MuntashirAkon/AppManager) by Muntashir Al-Islam (GPL-3.0-or-later, commit `dc4154f`), which is based on the [Exodus Privacy](https://exodus-privacy.eu.org) database.
 - **libadb-android** by the same author (JitPack dependency).
+- **[Shizuku API](https://github.com/RikkaApps/Shizuku-API)** by RikkaW (Apache-2.0, dependency), for shell and root access through Shizuku.
 - **Block lists** are downloaded on the phone from [HaGeZi DNS blocklists](https://github.com/hagezi/dns-blocklists); they are not part of this repository.
 - **Debloat list** (`app/src/main/assets/debloat/*.json`) is copied unchanged from [android-debloat-list](https://github.com/MuntashirAkon/android-debloat-list) (commit `10c8249`), © Muntashir Al-Islam and contributors, under **AGPL-3.0** (see `assets/debloat/COPYING` and `NOTICE.txt`). AGPL-3.0 is compatible with GPL-3.0 (section 13).
 - The DEX scanner, binary XML parser, firewall and DNS bypass catcher were written for this project (ideas from App Manager, no copied code).

@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -306,4 +307,48 @@ internal fun AppHistoryDialog(pkg: String, onClose: () -> Unit) {
                 Hint("Accesses within the same minute count once.")
             }
         })
+}
+
+/** Setup step 2, option C: Shizuku (root phones, or started with Wireless debugging once). */
+@Composable
+internal fun ShizukuOption(onWork: (String, suspend () -> String?) -> Unit) {
+    val ctx = localContext()
+    val sh = com.privacyguard.collect.ShizukuShell
+    var tick by remember { mutableIntStateOf(0) }
+    val installed = remember(tick) { sh.installed(ctx) }
+    val running = remember(tick) { sh.running() }
+    val granted = remember(tick) { sh.granted() }
+    // the permission dialog belongs to Shizuku: check again a few times after asking
+    var asked by remember { mutableStateOf(false) }
+    LaunchedEffect(asked) { if (asked) repeat(20) { kotlinx.coroutines.delay(1000); tick++; if (sh.granted()) { asked = false; return@LaunchedEffect } } }
+    Text("Option C – Shizuku (rooted phones, or no computer):", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+    Hint("Shizuku is a free app that gives other apps shell access. On a rooted phone it runs as root and starts by itself after a restart, so nothing needs reconnecting.")
+    when {
+        !installed -> {
+            Text("Shizuku is not installed.", fontSize = 13.sp)
+            OutlinedButton(onClick = {
+                runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse("market://details?id=${sh.PKG}")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    .onFailure { runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://shizuku.rikka.app/download/")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+            }) { Text("Get Shizuku") }
+        }
+        !running -> {
+            Text("Shizuku is installed but not running. Open it and tap Start (root, or Wireless debugging).", fontSize = 13.sp, color = ORANGE)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { ctx.packageManager.getLaunchIntentForPackage(sh.PKG)?.let { runCatching { ctx.startActivity(it) } } }) { Text("Open Shizuku") }
+                TextButton(onClick = { tick++ }) { Text("Check again") }
+            }
+        }
+        !granted -> Button(onClick = { sh.request(); asked = true }) { Text("Allow Privacy Guard in Shizuku") }
+        else -> {
+            Text("Connected through Shizuku" + if (sh.isRoot()) " (root)." else " (shell).", fontSize = 13.sp, color = GREEN)
+            OutlinedButton(onClick = {
+                onWork("Setting up with Shizuku") {
+                    android.util.Log.i("PG.Shell", "Shizuku setup\n" + com.privacyguard.collect.Shell.selfGrant(ctx))
+                    "Full access through Shizuku. " + (com.privacyguard.block.Firewall.sync(ctx) ?: "")
+                }
+            }) { Text("Set up full access") }
+        }
+    }
 }

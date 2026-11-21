@@ -147,8 +147,8 @@ private fun Home() {
         Blocker.setApp(ctx, pkg, true); blockTick++
         work("Blocking internet") {
             com.privacyguard.block.Firewall.sync(ctx)?.let { "$it All its traffic is cut, not only DNS." }
-                ?: if (vpn) "Internet blocked by DNS. Connect Wireless debugging to also cut its direct connections (firewall)."
-                else "Saved. Turn on the local VPN, or connect Wireless debugging for the firewall."
+                ?: if (vpn) "Internet blocked by DNS. Connect Wireless debugging or Shizuku to also cut its direct connections (firewall)."
+                else "Saved. Turn on the local VPN, or connect Wireless debugging or Shizuku for the firewall."
         }
     }
     fun blockHost(h: String) {
@@ -167,7 +167,7 @@ private fun Home() {
             notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
-    val full = mode == Mode.DIRECT || mode == Mode.ADB
+    val full = mode != null && mode != Mode.LIMITED
     val stepsDone = listOf(usage, full, monitor, vpn).count { it }
     val showSetup = setupOpen ?: (mode != null && stepsDone < 4)
 
@@ -246,7 +246,7 @@ private fun Home() {
         FilterListsCard(vpn, blockTick, busy == null, onChange = { blockTick++ },
             onUpdate = { work("Downloading block lists") { com.privacyguard.block.FilterLists.update(ctx, force = true) } })
         FirewallCard(blockTick, busy == null, onChange = { blockTick++ },
-            onSync = { work("Applying firewall") { com.privacyguard.block.Firewall.sync(ctx) ?: "Connect Wireless debugging first (Today → Setup, step 2, option B)." } })
+            onSync = { work("Applying firewall") { com.privacyguard.block.Firewall.sync(ctx) ?: "Connect Wireless debugging or Shizuku first (Today → Setup, step 2)." } })
         BgBlockCard(blockTick, onChange = { blockTick++ })
         BlockSection(vpn, blockTick, onChange = { blockTick++ }, onRestore = { key ->
             work("Restoring") {
@@ -305,6 +305,8 @@ private fun Home() {
                     }) { Text("Reconnect") }
                 }
                 ManualPair { port, code -> work("Pairing") { Pairing.pairAndSetup(ctx, port, code) } }
+                Spacer(Modifier.height(6.dp))
+                ShizukuOption(onWork = { l, b -> work(l, b) })
             }
 
             Step("3. Continuous monitoring", monitor,
@@ -620,7 +622,7 @@ private fun BlockSection(vpn: Boolean, tick: Int, onChange: () -> Unit, onRestor
             Text("${an.name(pkg)} · ${com.privacyguard.core.Ops.map[op]?.first ?: op}", fontSize = 13.sp, modifier = Modifier.weight(1f))
             TextButton(onClick = { onRestore(k) }) { Text("Restore", fontSize = 12.sp) }
         }
-        Hint("Limiting permissions needs full access via Wireless debugging; otherwise Settings opens. Microphone, camera and location can be set to " +
+        Hint("Limiting permissions needs Wireless debugging or Shizuku; otherwise Settings opens. Microphone, camera and location can be set to " +
             "“only while in use”; contacts, call log, SMS and clipboard can only be blocked completely.")
     }
 }
@@ -932,7 +934,7 @@ private fun FirewallCard(tick: Int, enabled: Boolean, onChange: () -> Unit, onSy
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Firewall for “Apps without internet”", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Hint("Android's own kernel firewall cuts ALL traffic of those apps, including hardcoded IPs and their own encrypted DNS. Needs Wireless debugging to switch on; after a restart it is applied again on the next Reconnect.")
+                Hint("Android's own kernel firewall cuts ALL traffic of those apps, including hardcoded IPs and their own encrypted DNS. Needs Wireless debugging or Shizuku to switch on; after a restart it is applied again on the next Reconnect.")
             }
         }
         when {

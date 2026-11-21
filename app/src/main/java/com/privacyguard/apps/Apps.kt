@@ -285,11 +285,11 @@ object PermissionAdvisor {
     /** Removes permissions with `pm revoke` (needs Wireless debugging), otherwise opens Settings. */
     fun revoke(ctx: Context, a: Advice): Blocker.Result {
         val cmds = a.perms.map { "pm revoke ${a.pkg} $it" }
-        if (!Shell.adbConnected(ctx, true)) return Blocker.Result.Manual(
-            "Removing a permission needs Wireless debugging connected. Or remove it yourself in Settings, or run from a computer:",
+        if (!Shell.privileged(ctx, true)) return Blocker.Result.Manual(
+            "Removing a permission needs Wireless debugging or Shizuku. Or remove it yourself in Settings, or run from a computer:",
             cmds.map { "adb shell $it" })
         for (c in cmds) {
-            val r = runCatching { Shell.adb(ctx, c) }.getOrElse { "error: ${it.message}" }
+            val r = runCatching { Shell.exec(ctx, c) }.getOrElse { "error: ${it.message}" }
             if (r.isNotBlank()) return Blocker.Result.Done("Failed: ${r.trim()}")
         }
         p(ctx).edit().putString("${a.pkg}|${a.group.id}", a.perms.joinToString(",")).apply()
@@ -300,8 +300,8 @@ object PermissionAdvisor {
         val perms = p(ctx).getString(key, null)?.split(',') ?: return Blocker.Result.Done("Nothing to restore.")
         val pkg = key.substringBefore('|')
         val cmds = perms.map { "pm grant $pkg $it" }
-        if (!Shell.adbConnected(ctx, true)) return Blocker.Result.Manual("Restoring needs Wireless debugging, or run from a computer:", cmds.map { "adb shell $it" })
-        for (c in cmds) runCatching { Shell.adb(ctx, c) }
+        if (!Shell.privileged(ctx, true)) return Blocker.Result.Manual("Restoring needs Wireless debugging or Shizuku, or run from a computer:", cmds.map { "adb shell $it" })
+        for (c in cmds) runCatching { Shell.exec(ctx, c) }
         p(ctx).edit().remove(key).apply()
         return Blocker.Result.Done("Permission given back.")
     }

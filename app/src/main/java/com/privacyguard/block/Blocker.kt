@@ -142,7 +142,7 @@ object Blocker {
     }
 
     private fun uidMode(ctx: Context, pkg: String, op: String): String? {
-        val out = runCatching { Shell.adb(ctx, "appops get --uid $pkg $op") }.getOrDefault("")
+        val out = runCatching { Shell.exec(ctx, "appops get --uid $pkg $op") }.getOrDefault("")
         // "Uid mode: OP: ignore" when there is a uid-level limit; otherwise absent (= allow)
         return Regex("""Uid mode: $op: (\w+)""").find(out)?.groupValues?.get(1)
     }
@@ -155,13 +155,13 @@ object Blocker {
         val ops = opsFor(op)
         val mode = limitMode(op)
         val cmds = ops.map { cmdSet(pkg, it, mode) }
-        if (!Shell.adbConnected(ctx, true)) return Result.Manual(
-            "This needs Wireless debugging connected (Setup → Full access, option B). Or turn it off yourself in Settings, " +
+        if (!Shell.privileged(ctx, true)) return Result.Manual(
+            "This needs Wireless debugging or Shizuku (Today → Setup, step 2). Or turn it off yourself in Settings, " +
                 "or run from a computer:", cmds.map { "adb shell $it" })
         val e = p(ctx).edit()
         for (o in ops) {
             val prev = uidMode(ctx, pkg, o) ?: "allow"
-            val r = runCatching { Shell.adb(ctx, cmdSet(pkg, o, mode)) }.getOrElse { "error: ${it.message}" }
+            val r = runCatching { Shell.exec(ctx, cmdSet(pkg, o, mode)) }.getOrElse { "error: ${it.message}" }
             Log.i(TAG, "limit $pkg $o -> $mode (was $prev): ${r.trim()}")
             if (r.isNotBlank()) { e.apply(); return Result.Done("Failed: ${r.trim()}") }
             val now = uidMode(ctx, pkg, o)
@@ -183,8 +183,8 @@ object Blocker {
         val prev = p(ctx).getString("op:$key", null) ?: return Result.Done("Nothing to restore.")
         val (pkg, op) = key.split('|', limit = 2)
         val cmd = cmdSet(pkg, op, prev)
-        if (!Shell.adbConnected(ctx, true)) return Result.Manual("Restoring needs Wireless debugging, or run from a computer:", listOf("adb shell $cmd"))
-        val r = runCatching { Shell.adb(ctx, cmd) }.getOrElse { "error: ${it.message}" }
+        if (!Shell.privileged(ctx, true)) return Result.Manual("Restoring needs Wireless debugging or Shizuku, or run from a computer:", listOf("adb shell $cmd"))
+        val r = runCatching { Shell.exec(ctx, cmd) }.getOrElse { "error: ${it.message}" }
         if (r.isNotBlank()) return Result.Done("Failed: ${r.trim()}")
         p(ctx).edit().remove("op:$key").apply()
         return Result.Done("Restored ($prev).")
