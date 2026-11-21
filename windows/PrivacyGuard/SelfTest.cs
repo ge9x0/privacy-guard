@@ -24,6 +24,8 @@ public static class SelfTest
     {
         Directory.CreateDirectory(dir);
         var log = new List<string>();
+        var deadline = DateTime.Now.AddMinutes(6);
+        var logFile = Path.Combine(dir, "selftest.log");
         w.Show();
         string[] names = { "today", "activity", "apps", "blocking" };
         for (int t = 0; t < names.Length; t++)
@@ -32,7 +34,7 @@ public static class SelfTest
             await Settle(w);
             Shot(w, Path.Combine(dir, $"{t + 1}-{names[t]}.png"));
             var pressed = new HashSet<string>();
-            for (int round = 0; round < 80; round++)
+            for (int round = 0; round < 40 && DateTime.Now < deadline; round++)
             {
                 // buttons are rebuilt after each press, so look them up again every time
                 var b = Buttons(w.CurrentPanel).FirstOrDefault(x => !pressed.Contains(Label(x)));
@@ -42,19 +44,22 @@ public static class SelfTest
                 try { b.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent)); await Settle(w); }
                 catch (Exception e) { Errors++; log.Add($"FAIL [{names[t]}] {Label(b)}: {e.Message}"); }
                 log.Add($"{(Errors > before ? "FAIL" : "ok  ")} [{names[t]}] {Label(b)}");
+                File.WriteAllLines(logFile, log);
             }
             if (w.Tab != t) w.Select(t);
             await Settle(w);
             Shot(w, Path.Combine(dir, $"{t + 1}-{names[t]}-after.png"));
         }
         log.Add($"errors: {Errors}");
-        File.WriteAllLines(Path.Combine(dir, "selftest.log"), log);
+        if (DateTime.Now >= deadline) { Errors++; log.Add("FAIL: took longer than 6 minutes"); }
+        File.WriteAllLines(logFile, log);
         var errFile = Path.Combine(Platform.Prefs.Dir, "errors.log");
         if (File.Exists(errFile)) File.Copy(errFile, Path.Combine(dir, "errors.log"), true);
         return Errors == 0 ? 0 : 1;
     }
 
-    static string Label(Button b) => (b.Content as string ?? b.Content?.ToString() ?? "?") + "#" + (b.Parent as FrameworkElement)?.GetHashCode();
+    // the text without times/counts, so a rebuilt "Scan again (last 12:01)" counts as the same button
+    static string Label(Button b) => System.Text.RegularExpressions.Regex.Replace(b.Content as string ?? b.Content?.ToString() ?? "?", @"[\d:]+", "#");
 
     static IEnumerable<Button> Buttons(DependencyObject? root)
     {
@@ -74,7 +79,7 @@ public static class SelfTest
     {
         for (int i = 0; i < 3; i++)
         {
-            try { await w.Pending.WaitAsync(TimeSpan.FromMinutes(3)); } catch (Exception e) { Errors++; MainWindow.Log(e); }
+            try { await w.Pending.WaitAsync(TimeSpan.FromSeconds(90)); } catch (Exception e) { Errors++; MainWindow.Log(e); }
             await w.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
             await Task.Delay(150);
         }
