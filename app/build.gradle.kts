@@ -15,8 +15,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 30          // Android 11: Wireless debugging + getConnectionOwnerUid
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
     }
 
     // Release key: with -Ppublish and a keystore.properties file (never committed) it signs the release build;
