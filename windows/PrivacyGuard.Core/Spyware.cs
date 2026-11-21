@@ -33,9 +33,12 @@ public static class Spyware
 
     static readonly string[] RiskyPerms = { "<all_urls>", "webRequest", "webRequestBlocking", "debugger", "nativeMessaging", "proxy", "cookies", "history", "clipboardRead", "desktopCapture", "tabCapture", "management" };
 
+    static readonly Regex UserDir = new(@"([a-z]:\\users\\)[^\\]+", RegexOptions.IgnoreCase);
+
     public static Finding Classify(Autostart a)
     {
-        var text = $"{a.Name} {a.Command} {a.Signer}";
+        // the user's own folder name is left out: "C:\Users\runneradmin\" must not look like Radmin
+        var text = UserDir.Replace($"{a.Name} {a.Command} {a.Signer}", @"$1");
         if (Monitoring.IsMatch(text))
             return new Finding(Kind.Monitoring, Severity.High, a.Name, "Monitoring or keylogger software: it can record your screen, keys and messages. Remove it unless you installed it on purpose.", a.Path);
         if (Remote.IsMatch(text))

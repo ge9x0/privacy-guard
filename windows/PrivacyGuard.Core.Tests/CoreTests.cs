@@ -133,4 +133,11 @@ public class CoreTests
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         File.Delete(path);
     }
+    [Fact] public void UserFolderNameIsNotARemoteTool()
+    {
+        var f = Spyware.Classify(new Autostart(Kind.Autostart, "Updater", "Run key", @"C:\Users\runneradmin\AppData\Local\Temp\upd.exe", @"C:\Users\runneradmin\AppData\Local\Temp\upd.exe", false, null));
+        Assert.NotEqual(Kind.RemoteAccess, f.Kind);
+        var g = Spyware.Classify(new Autostart(Kind.Service, "AnyDesk", "Service", @"C:\Program Files (x86)\AnyDesk\AnyDesk.exe --service", @"C:\Program Files (x86)\AnyDesk\AnyDesk.exe", true, "philandro Software GmbH"));
+        Assert.Equal(Kind.RemoteAccess, g.Kind);
+    }
 }
