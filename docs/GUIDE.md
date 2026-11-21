@@ -206,4 +206,6 @@ All network blocking works through the local VPN (Setup, step 4).
 
 **Where is my data?** Only on the phone, in the app's private storage. Uninstalling the app deletes it.
 
+**Is there an iPhone version?** iOS does not allow an app to see other apps' access, so not as an app. But iPhones keep an *App Privacy Report* (Settings → Privacy & Security → App Privacy Report → Save App Privacy Report). Open that file in [Privacy Guard for iPhone](https://ge9x0.github.io/privacy-guard/ios/): it shows the same kind of alerts, trackers and scores, entirely in the browser.
+
 **Which phones work?** Android 11 or newer. It is tested on Samsung (Android 17) and on clean Android 11 and 14. Some manufacturers block permanent access; Wireless debugging then works instead.

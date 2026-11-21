@@ -6,6 +6,8 @@ Everything runs on the phone. No account, no cloud, no analytics. The only netwo
 
 📖 **[User guide](docs/GUIDE.md)**: setup step by step, every screen explained, common tasks and troubleshooting.
 
+🍎 **iPhone?** iOS does not let an app watch other apps, but it keeps its own record. **[Privacy Guard for iPhone](https://ge9x0.github.io/privacy-guard/ios/)** reads the *App Privacy Report* you save from Settings and shows camera, microphone, location and contacts use at night or for long, data brokers and tracker companies, and a score per app. It runs entirely in the browser; the file is never uploaded (source: `docs/ios/index.html`).
+
 **Requirements:** Android 11 or newer. Tested on a Samsung Galaxy A35 (Android 17) and on clean Android 11 and Android 14 emulators.
 
 ## Features

@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Nothing leaves the browser: no scripts or styles from elsewhere, and the only allowed request is the optional block-list download. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src https://cdn.jsdelivr.net https://raw.githubusercontent.com; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Privacy Guard for iPhone</title>
+<meta name="description" content="Reads the App Privacy Report your iPhone saves and shows which apps used the camera, microphone, location and contacts, when, and which trackers they contacted. Runs entirely in your browser.">
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --text: #16191d; --muted: #5d6672; --line: #e3e6ea;
+  --accent: #1f6feb; --red: #c62828; --orange: #d35400; --green: #2e7d32;
+  --red-bg: #fdecea; --orange-bg: #fff3e6; --green-bg: #e9f5ea; --chip: #eef1f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --card: #181c22; --text: #e8eaed; --muted: #9aa3ad; --line: #2a3038;
+    --accent: #5b9dff; --red: #ff6b6b; --orange: #ffa94d; --green: #63c174;
+    --red-bg: #3a1d1d; --orange-bg: #3a2a17; --green-bg: #1b3020; --chip: #232931;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216; --card: #181c22; --text: #e8eaed; --muted: #9aa3ad; --line: #2a3038;
+  --accent: #5b9dff; --red: #ff6b6b; --orange: #ffa94d; --green: #63c174;
+  --red-bg: #3a1d1d; --orange-bg: #3a2a17; --green-bg: #1b3020; --chip: #232931;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 20px 16px 60px; }
+h1 { font-size: 26px; margin: 8px 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 18px; margin: 0 0 10px; }
+h3 { font-size: 15px; margin: 14px 0 6px; }
+p { margin: 6px 0; }
+a { color: var(--accent); }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin: 14px 0; }
+ol { padding-left: 20px; margin: 6px 0; }
+li { margin: 3px 0; }
+button, .btn { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px; padding: 9px 14px; cursor: pointer; }
+button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:disabled { opacity: .55; cursor: default; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+input[type=file] { display: none; }
+input[type=search] { font: inherit; width: 100%; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.drop { border: 2px dashed var(--line); border-radius: 14px; padding: 22px 16px; text-align: center; }
+.drop.over { border-color: var(--accent); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.tile { background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+.tile b { display: block; font-size: 22px; line-height: 1.2; }
+.tile span { font-size: 12px; color: var(--muted); }
+.alert { border-radius: 10px; padding: 9px 12px; margin: 6px 0; }
+.alert.high { background: var(--red-bg); }
+.alert.med { background: var(--orange-bg); }
+.alert b { display: block; }
+.chip { display: inline-block; background: var(--chip); border-radius: 999px; padding: 1px 9px; font-size: 12px; margin: 2px 4px 2px 0; white-space: nowrap; }
+.chip.red { background: var(--red-bg); color: var(--red); }
+.chip.orange { background: var(--orange-bg); color: var(--orange); }
+.app { border-top: 1px solid var(--line); padding: 10px 0; }
+.app:first-child { border-top: 0; }
+.app summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; }
+.app summary::-webkit-details-marker { display: none; }
+.score { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-weight: 700; }
+.s-good { background: var(--green-bg); color: var(--green); }
+.s-mid { background: var(--orange-bg); color: var(--orange); }
+.s-bad { background: var(--red-bg); color: var(--red); }
+.grow { flex: 1; min-width: 0; }
+.name { font-weight: 600; overflow-wrap: anywhere; }
+.bid { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+td, th { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; overflow-wrap: anywhere; }
+.bars { display: flex; align-items: flex-end; gap: 2px; height: 46px; margin: 6px 0 2px; }
+.bars div { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 1px; opacity: .85; }
+.bars div.night { background: var(--orange); }
+.axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.hidden { display: none !important; }
+.progress { height: 4px; background: var(--chip); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.progress div { height: 100%; width: 40%; background: var(--accent); animation: slide 1.1s infinite ease-in-out; }
+@keyframes slide { from { margin-left: -40%; } to { margin-left: 100%; } }
+footer { margin-top: 30px; font-size: 12.5px; color: var(--muted); }
+@media print { .noprint { display: none !important; } body { background: #fff; } .card { break-inside: avoid; } details { display: block; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="muted small">Privacy Guard · for iPhone and iPad</div>
+    <h1>What your apps really do</h1>
+    <p>Your iPhone keeps a record of which apps used the camera, microphone, location, contacts and photos, and which servers they contacted. This page reads that record and points out what is worth a look.</p>
+    <p class="small muted">The file is read <b>only in this browser</b>. Nothing is uploaded; the page has no analytics and works offline once loaded.</p>
+  </header>
+
+  <section class="card noprint" id="start">
+    <h2>1. Save the report on your iPhone</h2>
+    <ol>
+      <li>Open <b>Settings → Privacy &amp; Security → App Privacy Report</b> and turn it on if it is off. It needs a few days to collect data.</li>
+      <li>Scroll to the bottom and tap <b>Save App Privacy Report</b>, then <b>Save to Files</b>.</li>
+    </ol>
+    <h2 style="margin-top:16px">2. Open it here</h2>
+    <div class="drop" id="drop">
+      <div class="row" style="justify-content:center">
+        <label class="btn primary" for="file">Choose the report file</label>
+        <button id="sample">Try with sample data</button>
+      </div>
+      <p class="small muted" style="margin-top:10px">The file is called something like <span class="mono">App_Privacy_Report_v4_2026-11-21.ndjson</span>. On a computer you can also drop it here.</p>
+      <input type="file" id="file">
+    </div>
+    <div class="progress hidden" id="busy"><div></div></div>
+    <p class="small" id="msg" role="status"></p>
+  </section>
+
+  <div id="out" class="hidden">
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Summary</h2>
+        <div class="row noprint">
+          <button id="print">Print / PDF</button>
+          <button id="again">Open another file</button>
+        </div>
+      </div>
+      <p class="small muted" id="period"></p>
+      <div class="tiles" id="tiles"></div>
+    </section>
+
+    <section class="card">
+      <h2>Worth a look</h2>
+      <p class="small muted">Use at night, long recordings, frequent location and contacts access, and contact with data brokers. An entry means "check this", not proof of spying: many apps have good reasons.</p>
+      <div id="alerts"></div>
+    </section>
+
+    <section class="card">
+      <h2>Apps</h2>
+      <p class="small muted">Score: 100 is clean. Points are lost for the entries above and for each tracker company contacted (data brokers the most). Tap an app for details.</p>
+      <div class="row noprint" style="margin-bottom:8px">
+        <input type="search" id="q" placeholder="Search apps or servers" aria-label="Search apps or servers">
+      </div>
+      <div id="apps"></div>
+    </section>
+
+    <section class="card">
+      <h2>Tracker companies</h2>
+      <p class="small muted">Known ad networks, data brokers and analytics companies, with the apps that contacted them. Lists from Privacy Guard (data brokers and SDK companies)<span id="listnote"></span>.</p>
+      <div class="row noprint" id="listrow">
+        <button id="lists">Also check against the HaGeZi block lists (5 MB download)</button>
+      </div>
+      <div id="trackers"></div>
+    </section>
+
+    <section class="card">
+      <h2>When sensors were used</h2>
+      <p class="small muted">All camera, microphone and screen recording use by hour of the day (phone's own time). Orange = 00:00–05:59.</p>
+      <div class="bars" id="hours"></div>
+      <div class="axis"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
+    </section>
+  </div>
+
+  <footer>
+    Privacy Guard is free software under GPL-3.0-or-later · <a href="https://github.com/ge9x0/privacy-guard">source code</a>.
+    The Android app does the same live, on the phone. Tracker signatures based on Exodus Privacy and App Manager; block lists by
+    <a href="https://github.com/hagezi/dns-blocklists">HaGeZi</a>. Not affiliated with Apple.
+  </footer>
+</main>
+
+<script>
+"use strict";
+// Tracker list generated from app/src/main/java/com/privacyguard/core/Trackers.kt
+const TR = {"cats":{"BROKER":"Data / location broker","ADS":"Ad network","ATTR":"Attribution / install tracking","ANALYTICS":"Analytics / profiling","META":"Meta (Facebook, Instagram, WhatsApp)","GOOGLE":"Google ads / analytics","SAMSUNG":"Samsung ads / analytics","BYTEDANCE":"ByteDance / TikTok"},"list":{"x-mode.io":["X-Mode / Outlogic","BROKER"],"xmode.io":["X-Mode / Outlogic","BROKER"],"outlogic.io":["X-Mode / Outlogic","BROKER"],"cuebiq.com":["Cuebiq","BROKER"],"huq.io":["Huq Industries","BROKER"],"foursquare.com":["Foursquare (Pilgrim SDK)","BROKER"],"placed.com":["Placed / Foursquare","BROKER"],"safegraph.com":["SafeGraph","BROKER"],"unacast.com":["Unacast / Gravy","BROKER"],"gravyanalytics.com":["Gravy Analytics","BROKER"],"venntel.com":["Venntel","BROKER"],"tutela.com":["Tutela","BROKER"],"predicio.fr":["Predicio","BROKER"],"fysical.com":["Fysical","BROKER"],"inloco.com.br":["Incognia / In Loco","BROKER"],"incognia.com":["Incognia","BROKER"],"radar.io":["Radar","BROKER"],"areametrics.com":["AreaMetrics","BROKER"],"blis.com":["Blis","BROKER"],"near.co":["Near Intelligence","BROKER"],"mobilewalla.com":["Mobilewalla","BROKER"],"liveramp.com":["LiveRamp","BROKER"],"rlcdn.com":["LiveRamp","BROKER"],"acxiom.com":["Acxiom","BROKER"],"bluekai.com":["Oracle BlueKai","BROKER"],"krxd.net":["Salesforce Krux","BROKER"],"lotame.com":["Lotame","BROKER"],"crwdcntrl.net":["Lotame","BROKER"],"exelator.com":["Nielsen eXelate","BROKER"],"tapad.com":["Tapad (Experian)","BROKER"],"adsquare.com":["adsquare","BROKER"],"tamoco.com":["Tamoco","BROKER"],"kochava.com":["Kochava","BROKER"],"kochava.io":["Kochava","BROKER"],"appsflyer.com":["AppsFlyer","ATTR"],"appsflyersdk.com":["AppsFlyer","ATTR"],"adjust.com":["Adjust","ATTR"],"adjust.io":["Adjust","ATTR"],"adj.st":["Adjust","ATTR"],"branch.io":["Branch","ATTR"],"app.link":["Branch","ATTR"],"singular.net":["Singular","ATTR"],"sng.link":["Singular","ATTR"],"tenjin.io":["Tenjin","ATTR"],"applovin.com":["AppLovin","ADS"],"applvn.com":["AppLovin","ADS"],"unityads.unity3d.com":["Unity Ads","ADS"],"ironsrc.mobi":["ironSource","ADS"],"ironsrc.com":["ironSource","ADS"],"supersonicads.com":["ironSource","ADS"],"inmobi.com":["InMobi","ADS"],"mintegral.com":["Mintegral","ADS"],"rayjump.com":["Mintegral","ADS"],"vungle.com":["Vungle / Liftoff","ADS"],"liftoff.io":["Liftoff","ADS"],"chartboost.com":["Chartboost","ADS"],"criteo.com":["Criteo","ADS"],"criteo.net":["Criteo","ADS"],"taboola.com":["Taboola","ADS"],"outbrain.com":["Outbrain","ADS"],"smaato.net":["Smaato","ADS"],"pubmatic.com":["PubMatic","ADS"],"rubiconproject.com":["Magnite","ADS"],"adnxs.com":["Xandr","ADS"],"moatads.com":["Oracle Moat","ADS"],"yandex.ru":["Yandex","ADS"],"appmetrica.yandex.com":["Yandex AppMetrica","ANALYTICS"],"amplitude.com":["Amplitude","ANALYTICS"],"mixpanel.com":["Mixpanel","ANALYTICS"],"segment.io":["Segment","ANALYTICS"],"segment.com":["Segment","ANALYTICS"],"braze.com":["Braze","ANALYTICS"],"appboy.com":["Braze","ANALYTICS"],"onesignal.com":["OneSignal","ANALYTICS"],"flurry.com":["Flurry","ANALYTICS"],"comscore.com":["comScore","ANALYTICS"],"scorecardresearch.com":["comScore","ANALYTICS"],"newrelic.com":["New Relic","ANALYTICS"],"clevertap.com":["CleverTap","ANALYTICS"],"wzrkt.com":["CleverTap","ANALYTICS"],"moengage.com":["MoEngage","ANALYTICS"],"uxcam.com":["UXCam (records the screen)","ANALYTICS"],"smartlook.com":["Smartlook (records the screen)","ANALYTICS"],"hotjar.com":["Hotjar","ANALYTICS"],"graph.facebook.com":["Meta Graph API","META"],"facebook.com":["Meta","META"],"facebook.net":["Meta","META"],"fbcdn.net":["Meta CDN","META"],"instagram.com":["Meta / Instagram","META"],"cdninstagram.com":["Meta / Instagram","META"],"whatsapp.net":["Meta / WhatsApp","META"],"whatsapp.com":["Meta / WhatsApp","META"],"doubleclick.net":["Google DoubleClick","GOOGLE"],"googleadservices.com":["Google Ads","GOOGLE"],"googlesyndication.com":["Google AdSense","GOOGLE"],"app-measurement.com":["Google Analytics for Firebase","GOOGLE"],"google-analytics.com":["Google Analytics","GOOGLE"],"admob.com":["Google AdMob","GOOGLE"],"crashlytics.com":["Firebase Crashlytics","GOOGLE"],"samsungads.com":["Samsung Ads","SAMSUNG"],"samsungacr.com":["Samsung ACR","SAMSUNG"],"samsungrm.net":["Samsung","SAMSUNG"],"pangle.io":["Pangle (ByteDance)","BYTEDANCE"],"pangleglobal.com":["Pangle (ByteDance)","BYTEDANCE"],"byteoversea.com":["ByteDance","BYTEDANCE"],"tiktokv.com":["TikTok","BYTEDANCE"],"tiktok.com":["TikTok","BYTEDANCE"]},"weight":{"BROKER":3,"ATTR":2,"ADS":2,"ANALYTICS":2,"BYTEDANCE":2,"META":1,"GOOGLE":1,"SAMSUNG":1}};
+
+// ---- helpers ----
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = n => n.toLocaleString("en-US");
+const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many}`;
+function dur(ms) {
+  if (ms == null) return "";
+  const m = Math.round(ms / 60000);
+  if (m < 1) return "under 1 min";
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
+}
+/** Hour and date as the phone wrote them (the timestamp's own offset), whatever the viewer's time zone. */
+function local(ts) {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/.exec(ts || "");
+  return m ? { day: m[1], hour: +m[2], hm: `${m[2]}:${m[3]}` } : null;
+}
+
+const CAT = {
+  camera: "Camera", microphone: "Microphone", location: "Location", contacts: "Contacts", photos: "Photos",
+  mediaLibrary: "Media library", screenRecording: "Screen recording", calendars: "Calendar", calendar: "Calendar",
+  reminders: "Reminders", bluetooth: "Bluetooth", motion: "Motion & fitness", health: "Health", homeKit: "Home",
+};
+const catName = c => CAT[c] || (c ? c.replace(/([A-Z])/g, " $1").replace(/^./, x => x.toUpperCase()) : "Other");
+const SENSORS = new Set(["camera", "microphone", "screenRecording"]);
+
+const NAMES = {
+  "com.burbn.instagram": "Instagram", "com.facebook.Facebook": "Facebook", "com.facebook.Messenger": "Messenger",
+  "net.whatsapp.WhatsApp": "WhatsApp", "net.whatsapp.WhatsAppSMB": "WhatsApp Business", "com.zhiliaoapp.musically": "TikTok",
+  "com.atebits.Tweetie2": "X (Twitter)", "com.toyopagroup.picaboo": "Snapchat", "ph.telegra.Telegraph": "Telegram",
+  "org.whispersystems.signal": "Signal", "com.google.chrome.ios": "Chrome", "com.google.GoogleMobile": "Google",
+  "com.google.Maps": "Google Maps", "com.google.ios.youtube": "YouTube", "com.google.Gmail": "Gmail", "com.spotify.client": "Spotify",
+  "com.netflix.Netflix": "Netflix", "com.amazon.Amazon": "Amazon", "com.microsoft.skype.teams": "Teams", "us.zoom.videomeetings": "Zoom",
+  "com.linkedin.LinkedIn": "LinkedIn", "com.pinterest": "Pinterest", "com.reddit.Reddit": "Reddit", "com.ubercab.UberClient": "Uber",
+  "com.apple.mobilesafari": "Safari", "com.apple.camera": "Camera", "com.apple.mobilephone": "Phone", "com.apple.facetime": "FaceTime",
+  "com.apple.MobileSMS": "Messages", "com.apple.Maps": "Apple Maps", "com.apple.VoiceMemos": "Voice Memos", "com.apple.mobileslideshow": "Photos",
+  "com.apple.Health": "Health", "com.apple.weather": "Weather", "com.apple.findmy": "Find My", "com.apple.shortcuts": "Shortcuts",
+  "com.apple.mobilemail": "Mail", "com.apple.MobileAddressBook": "Contacts", "com.apple.mobilecal": "Calendar",
+};
+function appName(id) {
+  if (NAMES[id]) return NAMES[id];
+  if (id.includes("/")) return id.split("/").filter(Boolean).pop();
+  const parts = id.split(".");
+  const last = parts.length > 2 && /^(ios|iphone|app|client|mobile)$/i.test(parts[parts.length - 1]) ? parts[parts.length - 2] : parts[parts.length - 1];
+  return last.replace(/[-_]/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, x => x.toUpperCase());
+}
+
+// Apps for which a long microphone/camera session or night use is their job.
+const CALLS = /^(com\.apple\.(mobilephone|facetime|VoiceMemos|camera|InCallService)|net\.whatsapp\.|org\.whispersystems\.signal|ph\.telegra\.|com\.skype\.|com\.microsoft\.skype|us\.zoom\.|com\.google\.(meet|Duo)|com\.viber|jp\.naver\.line|com\.facebook\.Messenger|com\.discord)/;
+const COMMS = /^(com\.apple\.(MobileSMS|mobilephone|MobileAddressBook|facetime|mobilemail)|net\.whatsapp\.|org\.whispersystems\.signal|ph\.telegra\.|com\.viber|jp\.naver\.line|com\.facebook\.Messenger|com\.google\.Gmail|com\.microsoft\.Office\.Outlook|com\.discord)/;
+// Tracker categories that belong to the app's own owner are not "third party".
+const FIRST = {
+  META: ["com.facebook.", "com.burbn.instagram", "net.whatsapp."],
+  GOOGLE: ["com.google."],
+  BYTEDANCE: ["com.zhiliaoapp.", "com.ss.iphone."],
+  SAMSUNG: ["com.samsung."],
+};
+
+function classify(host) {
+  const p = host.toLowerCase().replace(/\.$/, "").split(".");
+  for (let i = 0; i < p.length - 1; i++) {
+    const t = TR.list[p.slice(i).join(".")];
+    if (t) return { company: t[0], cat: t[1] };
+  }
+  return null;
+}
+
+// ---- parsing ----
+function parse(text) {
+  const recs = [];
+  const t = text.trim();
+  if (t.startsWith("[")) {
+    try { JSON.parse(t).forEach(r => recs.push(r)); } catch (e) { /* fall through to lines */ }
+  }
+  if (!recs.length) for (const line of t.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try { recs.push(JSON.parse(line)); } catch (e) { /* skip broken lines */ }
+  }
+  const open = new Map();
+  const access = [], net = [];
+  for (const r of recs) {
+    if (!r || typeof r !== "object") continue;
+    if (r.type === "access") {
+      const who = r.accessor?.identifier || r.bundleID || r.identifier;
+      if (!who) continue;
+      const key = r.identifier || `${who}|${r.category}`;
+      if (r.kind === "intervalBegin") open.set(key, { app: who, cat: r.category, start: r.timeStamp, ms: null });
+      else if (r.kind === "intervalEnd") {
+        const a = open.get(key);
+        if (a) { open.delete(key); a.ms = Math.max(0, Date.parse(r.timeStamp) - Date.parse(a.start)); access.push(a); }
+        else access.push({ app: who, cat: r.category, start: r.timeStamp, ms: null });
+      } else access.push({ app: who, cat: r.category, start: r.timeStamp, ms: r.duration != null ? r.duration * 1000 : null });
+    } else if (r.type === "networkActivity" && r.domain) {
+      net.push({ app: r.bundleID || r.accessor?.identifier || "unknown", domain: String(r.domain).toLowerCase(), hits: +r.hits || 1,
+        first: r.firstTimeStamp, last: r.timeStamp, owner: r.domainOwner || "", byApp: r.initiatedType !== "NonAppInitiated", context: r.context || "" });
+    }
+  }
+  for (const a of open.values()) access.push(a); // still running when the report was saved
+  return { access, net, lines: recs.length };
+}
+
+// ---- analysis ----
+let lists = null; // Set of blocked domains from HaGeZi, when downloaded
+function listHit(host) {
+  if (!lists) return false;
+  const p = host.split(".");
+  for (let i = 0; i < p.length - 1; i++) if (lists.has(p.slice(i).join("."))) return true;
+  return false;
+}
+
+function analyze({ access, net }) {
+  const apps = new Map();
+  const app = id => {
+    if (!apps.has(id)) apps.set(id, { id, name: appName(id), access: [], net: [], alerts: [], trackers: new Map() });
+    return apps.get(id);
+  };
+  const days = new Set();
+  for (const a of access) { app(a.app).access.push(a); const l = local(a.start); if (l) days.add(l.day); }
+  for (const n of net) { app(n.app).net.push(n); const l = local(n.last); if (l) days.add(l.day); }
+  const nDays = Math.max(1, days.size);
+
+  for (const A of apps.values()) {
+    const sys = A.id.startsWith("com.apple.") || A.id.includes("/");
+    const calls = CALLS.test(A.id);
+    // sensors at night
+    const night = A.access.filter(a => SENSORS.has(a.cat) && (local(a.start)?.hour ?? 12) < 6);
+    if (night.length && !calls) {
+      const cats = [...new Set(night.map(a => catName(a.cat)))].join(", ");
+      const l = local(night[night.length - 1].start);
+      A.alerts.push({ sev: "high", title: `${cats} used at night`, text: `${plural(night.length, "time", "times")} between 00:00 and 06:00, last on ${l.day} at ${l.hm}.` });
+    }
+    // long microphone / camera / screen sessions
+    if (!calls) for (const c of ["microphone", "camera", "screenRecording"]) {
+      const long = A.access.filter(a => a.cat === c && a.ms != null && a.ms >= 15 * 60000);
+      if (long.length) {
+        const max = Math.max(...long.map(a => a.ms));
+        A.alerts.push({ sev: c === "microphone" || c === "screenRecording" ? "high" : "med", title: `Long ${catName(c).toLowerCase()} use`,
+          text: `${plural(long.length, "session", "sessions")} of 15 minutes or more, the longest ${dur(max)}.` });
+      }
+    }
+    // location very often
+    const loc = A.access.filter(a => a.cat === "location").length;
+    if (!sys && loc / nDays >= 40) A.alerts.push({ sev: "med", title: "Location very often", text: `About ${fmt(Math.round(loc / nDays))} times a day.` });
+    const locNight = A.access.filter(a => a.cat === "location" && (local(a.start)?.hour ?? 12) < 6).length;
+    if (!sys && locNight >= 5 && !/maps|waze|uber|findmy|weather/i.test(A.id)) A.alerts.push({ sev: "med", title: "Location at night", text: `${plural(locNight, "time", "times")} between 00:00 and 06:00.` });
+    // contacts outside communication apps
+    const con = A.access.filter(a => a.cat === "contacts").length;
+    if (con && !sys && !COMMS.test(A.id)) A.alerts.push({ sev: "med", title: "Read your contacts", text: `${plural(con, "time", "times")}. Check that this app needs them.` });
+    // trackers
+    for (const n of A.net) {
+      const t = classify(n.domain);
+      const hit = !t && listHit(n.domain);
+      if (!t && !hit) continue;
+      if (t && FIRST[t.cat]?.some(p => A.id.startsWith(p))) continue;
+      const key = t ? t.company : "Block list: ads & trackers";
+      const e = A.trackers.get(key) || { company: key, cat: t ? t.cat : "LIST", hits: 0, domains: new Set() };
+      e.hits += n.hits; e.domains.add(n.domain); A.trackers.set(key, e);
+    }
+    const brokers = [...A.trackers.values()].filter(t => t.cat === "BROKER");
+    if (brokers.length) A.alerts.push({ sev: "high", title: "Contacted a data broker", text: `${brokers.map(b => b.company).join(", ")}: companies that buy and sell location or personal data.` });
+    // score
+    let s = 100;
+    for (const a of A.alerts) s -= a.sev === "high" ? 15 : 7;
+    for (const t of A.trackers.values()) s -= 4 * (TR.weight[t.cat] ?? 1);
+    A.score = Math.max(0, Math.min(100, s));
+    A.hits = A.net.reduce((x, n) => x + n.hits, 0);
+    A.trackerHits = [...A.trackers.values()].reduce((x, t) => x + t.hits, 0);
+  }
+  const sorted = [...days].sort();
+  return { apps: [...apps.values()], from: sorted[0], to: sorted[sorted.length - 1], nDays };
+}
+
+// ---- rendering ----
+let R = null;
+function scoreClass(s) { return s >= 80 ? "s-good" : s >= 55 ? "s-mid" : "s-bad"; }
+function catLabel(c) { return c === "LIST" ? "Block list" : (TR.cats[c] || c); }
+
+function render() {
+  const { apps, from, to, nDays } = R;
+  const allAccess = apps.flatMap(a => a.access);
+  const alerts = apps.flatMap(a => a.alerts.map(x => ({ ...x, app: a })));
+  const companies = new Map();
+  for (const a of apps) for (const t of a.trackers.values()) {
+    const c = companies.get(t.company) || { ...t, apps: new Map(), hits: 0 };
+    c.hits += t.hits; c.apps.set(a.name, (c.apps.get(a.name) || 0) + t.hits); companies.set(t.company, c);
+  }
+  $("period").textContent = from ? `${from === to ? from : `${from} to ${to}`} · ${plural(nDays, "day", "days")} · ${plural(apps.length, "app", "apps")}` : "";
+  const count = c => allAccess.filter(a => a.cat === c).length;
+  const tiles = [
+    [alerts.filter(a => a.sev === "high").length, "High", "red"],
+    [alerts.filter(a => a.sev === "med").length, "Medium", "orange"],
+    [companies.size, "Tracker companies"],
+    [apps.reduce((x, a) => x + a.trackerHits, 0), "Tracker requests"],
+    [count("microphone"), "Microphone uses"],
+    [count("camera"), "Camera uses"],
+    [count("location"), "Location uses"],
+  ];
+  $("tiles").innerHTML = tiles.map(([n, l, c]) => `<div class="tile"><b${c ? ` style="color:var(--${c})"` : ""}>${fmt(n)}</b><span>${esc(l)}</span></div>`).join("");
+
+  alerts.sort((a, b) => (a.sev === b.sev ? 0 : a.sev === "high" ? -1 : 1) || a.app.score - b.app.score);
+  $("alerts").innerHTML = alerts.length ? alerts.map(a => `<div class="alert ${a.sev}"><b>${esc(a.app.name)} · ${esc(a.title)}</b><span class="small">${esc(a.text)}</span></div>`).join("")
+    : `<p class="small" style="color:var(--green)">Nothing stands out in this report.</p>`;
+
+  renderApps();
+
+  const cs = [...companies.values()].sort((a, b) => (TR.weight[b.cat] ?? 1) - (TR.weight[a.cat] ?? 1) || b.hits - a.hits);
+  $("trackers").innerHTML = cs.length ? `<table><tr><th>Company</th><th>Apps</th><th class="num">Requests</th></tr>${cs.map(c =>
+    `<tr><td><b>${esc(c.company)}</b><br><span class="chip ${c.cat === "BROKER" ? "red" : ""}">${esc(catLabel(c.cat))}</span></td><td>${[...c.apps.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => esc(n)).join(", ")}</td><td class="num">${fmt(c.hits)}</td></tr>`).join("")}</table>`
+    : `<p class="small" style="color:var(--green)">No known tracker companies in this report.</p>`;
+
+  const hours = Array(24).fill(0);
+  for (const a of allAccess) if (SENSORS.has(a.cat)) { const l = local(a.start); if (l) hours[l.hour]++; }
+  const max = Math.max(1, ...hours);
+  $("hours").innerHTML = hours.map((n, h) => `<div class="${h < 6 ? "night" : ""}" style="height:${Math.round(n / max * 100)}%" title="${String(h).padStart(2, "0")}:00 · ${n}"></div>`).join("");
+}
+
+function renderApps() {
+  const q = $("q").value.trim().toLowerCase();
+  const list = R.apps.filter(a => !q || a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q) || a.net.some(n => n.domain.includes(q)))
+    .sort((a, b) => a.score - b.score || b.trackerHits - a.trackerHits || b.access.length - a.access.length);
+  $("apps").innerHTML = list.length ? list.map(appHtml).join("") : `<p class="small muted">No app matches.</p>`;
+}
+
+function appHtml(A) {
+  const byCat = new Map();
+  for (const a of A.access) { const e = byCat.get(a.cat) || { n: 0, ms: 0 }; e.n++; e.ms += a.ms || 0; byCat.set(a.cat, e); }
+  const chips = [...byCat.entries()].map(([c, e]) => `<span class="chip">${esc(catName(c))} ${fmt(e.n)}</span>`).join("")
+    + (A.trackers.size ? `<span class="chip orange">${plural(A.trackers.size, "tracker", "trackers")}</span>` : "");
+  const recent = [...A.access].sort((a, b) => Date.parse(b.start) - Date.parse(a.start)).slice(0, 25);
+  const doms = new Map();
+  for (const n of A.net) { const e = doms.get(n.domain) || { ...n, hits: 0 }; e.hits += n.hits; doms.set(n.domain, e); }
+  const domRows = [...doms.values()].sort((a, b) => b.hits - a.hits).slice(0, 60).map(n => {
+    const t = classify(n.domain);
+    const flag = t ? `<span class="chip ${t.cat === "BROKER" ? "red" : "orange"}">${esc(t.company)}</span>` : listHit(n.domain) ? `<span class="chip orange">block list</span>` : "";
+    return `<tr><td class="mono">${esc(n.domain)}${n.byApp ? "" : ` <span class="chip" title="Contacted by content inside the app, e.g. a web page">content</span>`}<br>${flag}${n.owner ? `<span class="small muted">${esc(n.owner)}</span>` : ""}</td><td class="num">${fmt(n.hits)}</td></tr>`;
+  }).join("");
+  return `<details class="app"><summary>
+      <div class="score ${scoreClass(A.score)}">${A.score}</div>
+      <div class="grow"><div class="name">${esc(A.name)}</div><div class="bid">${esc(A.id)}</div><div>${chips}</div></div>
+    </summary>
+    ${A.alerts.map(a => `<div class="alert ${a.sev}"><b>${esc(a.title)}</b><span class="small">${esc(a.text)}</span></div>`).join("")}
+    ${recent.length ? `<h3>Recent access</h3><table><tr><th>When</th><th>What</th><th class="num">How long</th></tr>${recent.map(a => {
+      const l = local(a.start);
+      return `<tr><td>${l ? `${esc(l.day)} ${esc(l.hm)}` : ""}</td><td>${esc(catName(a.cat))}</td><td class="num">${a.ms == null ? (SENSORS.has(a.cat) ? "" : "") : esc(dur(a.ms))}</td></tr>`;
+    }).join("")}</table>${A.access.length > recent.length ? `<p class="small muted">and ${fmt(A.access.length - recent.length)} earlier</p>` : ""}` : ""}
+    ${domRows ? `<h3>Servers contacted</h3><table><tr><th>Server</th><th class="num">Requests</th></tr>${domRows}</table>${doms.size > 60 ? `<p class="small muted">and ${fmt(doms.size - 60)} more</p>` : ""}` : ""}
+  </details>`;
+}
+
+// ---- input ----
+function load(text, label) {
+  const parsed = parse(text);
+  if (!parsed.access.length && !parsed.net.length) {
+    $("msg").innerHTML = `<span style="color:var(--red)">This file has no App Privacy Report data${parsed.lines ? "" : " (it is empty or not JSON)"}. Save the report again from Settings and choose that file.</span>`;
+    return;
+  }
+  window._parsed = parsed;
+  R = analyze(parsed);
+  $("msg").textContent = `${label}: ${plural(parsed.access.length, "access", "accesses")} and ${plural(parsed.net.length, "network record", "network records")} read.`;
+  render();
+  $("out").classList.remove("hidden");
+  $("out").scrollIntoView({ behavior: "smooth" });
+}
+
+function readFile(f) {
+  if (!f) return;
+  if (f.size > 300 * 1024 * 1024) { $("msg").textContent = "The file is too large."; return; }
+  $("busy").classList.remove("hidden");
+  $("msg").textContent = "Reading…";
+  const r = new FileReader();
+  r.onload = () => { $("busy").classList.add("hidden"); try { load(String(r.result), f.name); } catch (e) { $("msg").textContent = "Could not read this file: " + e.message; } };
+  r.onerror = () => { $("busy").classList.add("hidden"); $("msg").textContent = "Could not read the file."; };
+  r.readAsText(f);
+}
+
+$("file").addEventListener("change", e => readFile(e.target.files[0]));
+const drop = $("drop");
+drop.addEventListener("dragover", e => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", e => { e.preventDefault(); drop.classList.remove("over"); readFile(e.dataTransfer.files[0]); });
+$("q").addEventListener("input", renderApps);
+$("print").addEventListener("click", () => { document.querySelectorAll("details").forEach(d => d.open = true); window.print(); });
+$("again").addEventListener("click", () => { $("file").value = ""; $("start").scrollIntoView({ behavior: "smooth" }); $("file").click(); });
+$("sample").addEventListener("click", () => load(sample(), "Sample data"));
+if (location.hash === "#sample") load(sample(), "Sample data");
+
+// HaGeZi Pro list: downloaded only when asked, kept in memory only.
+$("lists").addEventListener("click", async () => {
+  const b = $("lists"); b.disabled = true; b.textContent = "Downloading…";
+  const file = "pro-onlydomains.txt";
+  const urls = [`https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/${file}`, `https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/${file}`];
+  for (const u of urls) {
+    try {
+      const res = await fetch(u, { credentials: "omit", referrerPolicy: "no-referrer" });
+      if (!res.ok) continue;
+      const t = await res.text();
+      lists = new Set(t.split("\n").map(l => l.trim().toLowerCase()).filter(l => l && !l.startsWith("#")));
+      break;
+    } catch (e) { /* try the next mirror */ }
+  }
+  if (!lists) { b.disabled = false; b.textContent = "Download failed. Try again"; return; }
+  $("listrow").innerHTML = `<p class="small" style="color:var(--green)">Checked against HaGeZi Pro (${fmt(lists.size)} domains).</p>`;
+  $("listnote").textContent = " and HaGeZi Pro";
+  R = analyze(window._parsed);
+  render();
+});
+
+// ---- sample data (made up, no real person) ----
+function sample() {
+  const L = [];
+  const day = d => { const t = new Date(Date.UTC(2026, 10, 14 + d)); return t.toISOString().slice(0, 10); };
+  const ts = (d, h, m) => `${day(d)}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000+01:00`;
+  let id = 0;
+  const acc = (app, cat, d, h, m, min) => {
+    const k = "S" + (id++);
+    L.push({ type: "access", kind: "intervalBegin", category: cat, identifier: k, timeStamp: ts(d, h, m), accessor: { identifier: app, identifierType: "bundleID" } });
+    const e = new Date(Date.parse(ts(d, h, m)) + min * 60000);
+    L.push({ type: "access", kind: "intervalEnd", category: cat, identifier: k, timeStamp: e.toISOString().replace("Z", "+00:00"), accessor: { identifier: app, identifierType: "bundleID" } });
+  };
+  const netw = (app, domain, hits, d) => L.push({ type: "networkActivity", domain, hits, bundleID: app, firstTimeStamp: ts(d, 9, 0), timeStamp: ts(d, 21, 0), initiatedType: "AppInitiated", domainOwner: "" });
+  for (let d = 0; d < 7; d++) {
+    acc("com.burbn.instagram", "camera", d, 13, 5, 2); acc("com.burbn.instagram", "microphone", d, 13, 5, 2);
+    acc("com.burbn.instagram", "photos", d, 20, 40, 1);
+    netw("com.burbn.instagram", "i.instagram.com", 420, d); netw("com.burbn.instagram", "scontent.cdninstagram.com", 900, d); netw("com.burbn.instagram", "graph.facebook.com", 60, d);
+    for (let k = 0; k < 60; k++) acc("com.example.weatherlive", "location", d, k % 24, (k * 7) % 60, 0);
+    netw("com.example.weatherlive", "api.weatherlive.example", 80, d); netw("com.example.weatherlive", "sdk.x-mode.io", 45, d);
+    netw("com.example.weatherlive", "ms.applovin.com", 120, d); netw("com.example.weatherlive", "app-measurement.com", 30, d);
+    acc("net.whatsapp.WhatsApp", "microphone", d, 19, 10, 25); acc("net.whatsapp.WhatsApp", "contacts", d, 19, 0, 0);
+    netw("net.whatsapp.WhatsApp", "g.whatsapp.net", 300, d);
+    acc("com.example.flashlight", "contacts", d, 11, 0, 0);
+    netw("com.example.flashlight", "inapps.appsflyersdk.com", 15, d); netw("com.example.flashlight", "unityads.unity3d.com", 40, d);
+    acc("com.apple.camera", "camera", d, 16, 30, 3);
+    netw("com.zhiliaoapp.musically", "api16-normal-c-useast1a.tiktokv.com", 500, d);
+    acc("com.zhiliaoapp.musically", "microphone", d, 22, 15, 4);
+  }
+  acc("com.example.flashlight", "microphone", 3, 2, 41, 18);
+  acc("com.example.flashlight", "camera", 5, 3, 12, 1);
+  return L.map(x => JSON.stringify(x)).join("\n");
+}
+</script>
+</body>
+</html>
