@@ -23,6 +23,7 @@ public sealed class MainWindow : Window
     DateTime lastAuto;
 
     public Task Pending => pending;
+    public FrameworkElement HeaderPanel => header;
     public int Tab => tabs.SelectedIndex;
     public StackPanel? CurrentPanel => scrolls[Math.Max(0, tabs.SelectedIndex)].Content as StackPanel;
 

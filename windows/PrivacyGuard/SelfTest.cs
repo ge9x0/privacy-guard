@@ -28,6 +28,22 @@ public static class SelfTest
         var logFile = Path.Combine(dir, "selftest.log");
         w.Show();
         string[] names = { "today", "activity", "apps", "blocking" };
+
+        // 1) pictures for videos: example data, phone-shaped window, 2x resolution
+        Demo.Seed(Program.Store);
+        w.Width = 560; w.Height = 720;
+        await Settle(w);
+        Hi(w.HeaderPanel, Path.Combine(dir, "reel-0-header.png"));
+        for (int t = 0; t < names.Length; t++)
+        {
+            w.Select(t);
+            await Settle(w);
+            if (t == 1) { foreach (var x in Expanders(w.CurrentPanel)) x.IsExpanded = true; await Settle(w); }
+            Hi(w.CurrentPanel, Path.Combine(dir, $"reel-{t + 1}-{names[t]}.png"));
+        }
+        w.Width = 980; w.Height = 820;
+
+        // 2) every button, with the full-size window
         for (int t = 0; t < names.Length; t++)
         {
             w.Select(t);
@@ -73,6 +89,44 @@ public static class SelfTest
             int n = VisualTreeHelper.GetChildrenCount(o);
             for (int i = 0; i < n; i++) q.Enqueue(VisualTreeHelper.GetChild(o, i));
         }
+    }
+
+    static IEnumerable<Expander> Expanders(DependencyObject? root)
+    {
+        if (root == null) yield break;
+        var q = new Queue<DependencyObject>(); q.Enqueue(root);
+        while (q.Count > 0)
+        {
+            var o = q.Dequeue();
+            if (o is Expander e) yield return e;
+            int n = VisualTreeHelper.GetChildrenCount(o);
+            for (int i = 0; i < n; i++) q.Enqueue(VisualTreeHelper.GetChild(o, i));
+        }
+    }
+
+    /// <summary>The element at twice the resolution (for 1080-wide video frames), whole height.</summary>
+    static void Hi(FrameworkElement? e, string file)
+    {
+        if (e == null) return;
+        try
+        {
+            double wd = e.ActualWidth, ht = Math.Min(8000, e.ActualHeight);
+            const double pad = 12;
+            var bmp = new RenderTargetBitmap((int)((wd + 2 * pad) * 2), (int)((ht + 2 * pad) * 2), 192, 192, PixelFormats.Pbgra32);
+            var dv = new DrawingVisual();
+            using (var ctx = dv.RenderOpen())
+            {
+                ctx.DrawRectangle(Ui.Bg, null, new Rect(0, 0, wd + 2 * pad, ht + 2 * pad));
+                ctx.DrawRectangle(new VisualBrush(e) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top, ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, wd, ht) },
+                    null, new Rect(pad, pad, wd, ht));
+            }
+            bmp.Render(dv);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(bmp));
+            using var fs = File.Create(file);
+            enc.Save(fs);
+        }
+        catch (Exception x) { MainWindow.Log(x); }
     }
 
     static async Task Settle(MainWindow w)

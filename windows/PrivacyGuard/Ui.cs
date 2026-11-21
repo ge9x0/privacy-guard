@@ -56,7 +56,7 @@ public static class Ui
         {
             Content = text, Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(0, 4, 8, 4), MinHeight = 30,
             Background = primary ? Accent : CardBg, Foreground = primary ? Brushes.White : Text, BorderBrush = primary ? Accent : Line,
-            IsEnabled = enabled, ToolTip = tip, Cursor = System.Windows.Input.Cursors.Hand,
+            HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = enabled, ToolTip = tip, Cursor = System.Windows.Input.Cursors.Hand,
         };
         b.Click += (_, _) => click();
         return b;
