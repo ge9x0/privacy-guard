@@ -36,6 +36,8 @@ public static class Program
         Monitor = new ActivityMonitor(Store, Lists);
 
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        // the window is built before app.Run(); without this, awaits in it would continue on a background thread
+        SynchronizationContext.SetSynchronizationContext(new System.Windows.Threading.DispatcherSynchronizationContext(app.Dispatcher));
         app.Exit += (_, _) => Quitting = true;
         app.SessionEnding += (_, _) => Quitting = true;
         app.DispatcherUnhandledException += (_, e) => { MainWindow.Log(e.Exception); e.Handled = true; SelfTest.Errors++; };
